@@ -2,7 +2,6 @@
 <html lang="ms">
 <head>
   <meta charset="UTF-8">
-
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
@@ -12,16 +11,27 @@
 
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta
+    name="apple-mobile-web-app-status-bar-style"
+    content="black-translucent"
+  >
   <meta name="apple-mobile-web-app-title" content="JumpXMan">
 
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=2.1.1">
+  <link rel="stylesheet" href="./style.css?v=2.2.0">
 
-  <script defer src="./app.js?v=2.1.1"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
+  <script defer src="./app.js?v=2.2.0"></script>
+
+  <script
+    defer
+    src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+  ></script>
+
+  <script
+    defer
+    src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"
+  ></script>
 </head>
 
 <body>
@@ -52,7 +62,7 @@
           class="version-badge"
           aria-label="Versi aplikasi"
         >
-          v2.1.1
+          v2.2.0
         </span>
 
         <button
@@ -110,7 +120,7 @@
           hidden
         >
           <span id="gesture-text">
-            ✋ Tunjuk Tapak Tangan...
+            ✋ Tunjuk tapak tangan...
           </span>
         </div>
 
@@ -150,14 +160,6 @@
         type="button"
       >
         🔄 Reset
-      </button>
-
-      <button
-        id="settings-btn"
-        class="btn btn-outline tap-control"
-        type="button"
-      >
-        ⚙️ Tetapan
       </button>
     </section>
 
@@ -213,7 +215,7 @@
               </option>
 
               <option value="motion">
-                Motion (Tapak Tangan ✋ &amp; Genggam ✊)
+                Motion (Tapak Tangan ✋ &amp; Lambai Kiri–Kanan 👋)
               </option>
             </select>
           </div>
