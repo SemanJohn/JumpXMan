@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.1.1";
+  const APP_VERSION = "2.2.0";
   const UPDATE_CHECK_MS = 5 * 60 * 1000;
   const JUMP_COOLDOWN_MS = 450;
 
@@ -12,33 +12,43 @@
     canvas: $("output_canvas"),
     start: $("start-btn"),
     reset: $("reset-btn"),
-    settings: $("settings-btn"),
+
     openSettings: $("open-settings-btn"),
     closeSettings: $("close-settings-btn"),
     saveSettings: $("save-settings-btn"),
+
     modal: $("settings-modal"),
     startMode: $("start-mode-select"),
     camera: $("camera-select"),
     sensitivity: $("sensitivity-select"),
     skeleton: $("skeleton-toggle"),
+
     metronome: $("metronome-toggle"),
     bpm: $("bpm-slider"),
     bpmValue: $("bpm-value"),
+
     count: $("jump-count"),
     status: $("jump-status"),
     meter: $("jump-meter-bar"),
+
     countdown: $("countdown-overlay"),
     countdownNumber: $("countdown-number"),
+
     gesture: $("gesture-toast"),
     gestureText: $("gesture-text"),
+
     calibration: $("calibration-msg"),
     calibrationText: $("calibration-text"),
+
     install: $("pwa-install-btn"),
     appVersion: $("app-version")
   };
 
   if (Object.values(el).some((node) => !node)) {
-    console.error("JumpXMan: Elemen HTML tidak lengkap.");
+    console.error(
+      "JumpXMan: Elemen antaramuka tidak lengkap."
+    );
+
     return;
   }
 
@@ -46,7 +56,9 @@
 
   let stream = null;
   let holistic = null;
+
   let modelReady = false;
+  let modelReadyPromise = null;
   let processingFrame = false;
   let animationId = 0;
 
@@ -57,11 +69,24 @@
 
   let jumpCount = 0;
   let jumpState = "STANDING";
+
   let baselineBodyY = null;
   let baselineAnkleY = null;
   let lastJumpAt = 0;
 
   let gesturePhase = "NONE";
+  let openPalmFrames = 0;
+  let lostPalmFrames = 0;
+
+  let waveCenterX = null;
+  let waveLastSide = null;
+  let waveSideChanges = 0;
+  let waveThresholdX = 0.05;
+
+  let gestureHandSide = null;
+  let gestureStartedAt = 0;
+  let gestureTimerId = null;
+
   let countdownId = null;
   let countdownRunning = false;
 
@@ -73,16 +98,29 @@
   let updateCheckId = null;
   let reloadingForUpdate = false;
 
-  el.appVersion.textContent = `v${APP_VERSION}`;
+  el.appVersion.textContent =
+    `v${APP_VERSION}`;
 
-  function setStatus(text, type = "ready") {
+  function setStatus(
+    text,
+    type = "ready"
+  ) {
     el.status.textContent = text;
-    el.status.className = `status-badge ${type}`;
+
+    el.status.className =
+      `status-badge ${type}`;
   }
 
-  function showMessage(text, warning = false) {
+  function showMessage(
+    text,
+    warning = false
+  ) {
     el.calibrationText.textContent = text;
-    el.calibration.classList.toggle("warning", warning);
+
+    el.calibration.classList.toggle(
+      "warning",
+      warning
+    );
   }
 
   function openModal() {
@@ -98,6 +136,7 @@
   function resetJumpData() {
     jumpCount = 0;
     jumpState = "STANDING";
+
     baselineBodyY = null;
     baselineAnkleY = null;
     lastJumpAt = 0;
@@ -114,6 +153,64 @@
     }
   }
 
+  function clearCameraView() {
+    ctx.save();
+
+    ctx.setTransform(
+      1,
+      0,
+      0,
+      1,
+      0,
+      0
+    );
+
+    ctx.clearRect(
+      0,
+      0,
+      el.canvas.width,
+      el.canvas.height
+    );
+
+    ctx.restore();
+  }
+
+  function resetMotionGesture(
+    message =
+      "✋ Tunjuk tapak tangan dan kekalkan terbuka..."
+  ) {
+    clearTimeout(gestureTimerId);
+
+    gestureTimerId = null;
+    gesturePhase = "NONE";
+
+    openPalmFrames = 0;
+    lostPalmFrames = 0;
+
+    waveCenterX = null;
+    waveLastSide = null;
+    waveSideChanges = 0;
+    waveThresholdX = 0.05;
+
+    gestureHandSide = null;
+    gestureStartedAt = 0;
+
+    el.gestureText.textContent = message;
+  }
+
+  async function resetApplication() {
+    await stopCamera(false);
+
+    resetJumpData();
+    clearCameraView();
+
+    setStatus("SEDIA", "ready");
+
+    showMessage(
+      "🧍 Tekan Mula dan benarkan akses kamera."
+    );
+  }
+
   function playClick() {
     try {
       audioContext ||= new (
@@ -125,23 +222,39 @@
         audioContext.resume();
       }
 
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
+      const oscillator =
+        audioContext.createOscillator();
+
+      const gain =
+        audioContext.createGain();
 
       oscillator.type = "triangle";
       oscillator.frequency.value = 1200;
 
-      gain.gain.setValueAtTime(0.14, audioContext.currentTime);
+      gain.gain.setValueAtTime(
+        0.14,
+        audioContext.currentTime
+      );
+
       gain.gain.exponentialRampToValueAtTime(
         0.0001,
         audioContext.currentTime + 0.045
       );
 
-      oscillator.connect(gain).connect(audioContext.destination);
+      oscillator
+        .connect(gain)
+        .connect(audioContext.destination);
+
       oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.05);
+
+      oscillator.stop(
+        audioContext.currentTime + 0.05
+      );
     } catch (error) {
-      console.warn("Audio tidak tersedia:", error);
+      console.warn(
+        "Audio tidak tersedia:",
+        error
+      );
     }
   }
 
@@ -154,7 +267,8 @@
       sessionActive &&
       el.metronome.checked
     ) {
-      const bpm = Number(el.bpm.value) || 60;
+      const bpm =
+        Number(el.bpm.value) || 60;
 
       playClick();
 
@@ -167,8 +281,10 @@
 
   function cancelCountdown() {
     clearInterval(countdownId);
+
     countdownId = null;
     countdownRunning = false;
+
     el.countdown.hidden = true;
   }
 
@@ -179,7 +295,9 @@
 
     let remaining = seconds;
 
-    el.countdownNumber.textContent = String(remaining);
+    el.countdownNumber.textContent =
+      String(remaining);
+
     el.countdown.hidden = false;
 
     setStatus("SEDIA...", "waiting");
@@ -191,13 +309,16 @@
           "⚠️ Undur sehingga bahu, badan dan kedua-dua kaki kelihatan.",
           true
         );
+
         return;
       }
 
       remaining -= 1;
 
       if (remaining > 0) {
-        el.countdownNumber.textContent = String(remaining);
+        el.countdownNumber.textContent =
+          String(remaining);
+
         playClick();
         return;
       }
@@ -205,6 +326,7 @@
       cancelCountdown();
 
       sessionActive = true;
+
       baselineBodyY = null;
       baselineAnkleY = null;
       jumpState = "STANDING";
@@ -230,52 +352,75 @@
         JSON.stringify(settings)
       );
     } catch (error) {
-      console.warn("Tetapan tidak dapat disimpan:", error);
+      console.warn(
+        "Tetapan tidak dapat disimpan:",
+        error
+      );
     }
   }
 
   function loadPreferences() {
     try {
       const settings = JSON.parse(
-        localStorage.getItem("jumpxman-settings-v2") || "{}"
+        localStorage.getItem(
+          "jumpxman-settings-v2"
+        ) || "{}"
       );
 
       if (settings.startMode) {
-        el.startMode.value = settings.startMode;
+        el.startMode.value =
+          settings.startMode;
       }
 
       if (settings.camera) {
-        el.camera.value = settings.camera;
+        el.camera.value =
+          settings.camera;
       }
 
       if (settings.sensitivity) {
-        el.sensitivity.value = settings.sensitivity;
+        el.sensitivity.value =
+          settings.sensitivity;
       }
 
-      if (typeof settings.skeleton === "boolean") {
-        el.skeleton.checked = settings.skeleton;
+      if (
+        typeof settings.skeleton ===
+        "boolean"
+      ) {
+        el.skeleton.checked =
+          settings.skeleton;
       }
 
-      if (typeof settings.metronome === "boolean") {
-        el.metronome.checked = settings.metronome;
+      if (
+        typeof settings.metronome ===
+        "boolean"
+      ) {
+        el.metronome.checked =
+          settings.metronome;
       }
 
       if (settings.bpm) {
         el.bpm.value = settings.bpm;
       }
     } catch (error) {
-      console.warn("Tetapan tidak dapat dibaca:", error);
+      console.warn(
+        "Tetapan tidak dapat dibaca:",
+        error
+      );
     }
 
-    el.bpmValue.textContent = `${el.bpm.value} BPM`;
+    el.bpmValue.textContent =
+      `${el.bpm.value} BPM`;
   }
 
   async function initializeModel() {
-    if (typeof window.Holistic !== "function") {
+    if (
+      typeof window.Holistic !==
+      "function"
+    ) {
       modelReady = false;
 
       showMessage(
-        "⚠️ AI belum dimuat. Semak internet dan cuba lagi.",
+        "⚠️ AI gagal dimuat. Semak sambungan internet.",
         true
       );
 
@@ -284,8 +429,13 @@
 
     try {
       holistic = new window.Holistic({
-        locateFile: (file) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
+        locateFile: (file) => {
+          return (
+            "https://cdn.jsdelivr.net/npm/" +
+            "@mediapipe/holistic/" +
+            file
+          );
+        }
       });
 
       holistic.setOptions({
@@ -293,14 +443,18 @@
         smoothLandmarks: true,
         enableSegmentation: false,
         refineFaceLandmarks: false,
-        minDetectionConfidence: 0.55,
-        minTrackingConfidence: 0.55
+        minDetectionConfidence: 0.45,
+        minTrackingConfidence: 0.45
       });
 
       holistic.onResults(onResults);
+
       modelReady = true;
     } catch (error) {
-      console.error("Model AI gagal dimulakan:", error);
+      console.error(
+        "Model AI gagal dimulakan:",
+        error
+      );
 
       modelReady = false;
 
@@ -311,70 +465,151 @@
     }
   }
 
+  async function ensureModelReady(
+    timeoutMs = 8000
+  ) {
+    if (modelReady) return true;
+
+    if (modelReadyPromise) {
+      return modelReadyPromise;
+    }
+
+    modelReadyPromise = (async () => {
+      const deadline =
+        Date.now() + timeoutMs;
+
+      while (
+        typeof window.Holistic !==
+          "function" &&
+        Date.now() < deadline
+      ) {
+        await new Promise(
+          (resolve) =>
+            setTimeout(resolve, 100)
+        );
+      }
+
+      if (!modelReady) {
+        await initializeModel();
+      }
+
+      return modelReady;
+    })();
+
+    try {
+      return await modelReadyPromise;
+    } finally {
+      modelReadyPromise = null;
+    }
+  }
+
   async function listCameras() {
-    if (!navigator.mediaDevices?.enumerateDevices) return;
+    if (
+      !navigator.mediaDevices
+        ?.enumerateDevices
+    ) {
+      return;
+    }
 
     try {
       const devices = (
-        await navigator.mediaDevices.enumerateDevices()
-      ).filter((device) => device.kind === "videoinput");
+        await navigator.mediaDevices
+          .enumerateDevices()
+      ).filter(
+        (device) =>
+          device.kind === "videoinput"
+      );
 
-      const current = el.camera.value;
+      const current =
+        el.camera.value;
 
       el.camera.innerHTML = "";
 
       const choices = [
-        ["user", "📷 Kamera Depan (Selfie)"],
-        ["environment", "📷 Kamera Belakang (Utama)"]
+        [
+          "user",
+          "📷 Kamera Depan (Selfie)"
+        ],
+        [
+          "environment",
+          "📷 Kamera Belakang (Utama)"
+        ]
       ];
 
-      for (const [value, label] of choices) {
-        el.camera.add(new Option(label, value));
+      for (
+        const [value, label] of choices
+      ) {
+        el.camera.add(
+          new Option(label, value)
+        );
       }
 
-      devices.forEach((device, index) => {
-        if (!device.deviceId) return;
+      devices.forEach(
+        (device, index) => {
+          if (!device.deviceId) return;
 
-        el.camera.add(
-          new Option(
-            device.label || `Kamera ${index + 1}`,
-            device.deviceId
-          )
-        );
-      });
-
-      const cameraExists = [...el.camera.options].some(
-        (option) => option.value === current
+          el.camera.add(
+            new Option(
+              device.label ||
+                `Kamera ${index + 1}`,
+              device.deviceId
+            )
+          );
+        }
       );
+
+      const cameraExists =
+        [...el.camera.options].some(
+          (option) =>
+            option.value === current
+        );
 
       if (cameraExists) {
         el.camera.value = current;
       }
     } catch (error) {
-      console.warn("Senarai kamera gagal dibaca:", error);
+      console.warn(
+        "Senarai kamera gagal dibaca:",
+        error
+      );
     }
   }
 
   function cameraConstraints(value) {
     const base = {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+      width: {
+        ideal: 1280
+      },
+
+      height: {
+        ideal: 720
+      },
+
       frameRate: {
         ideal: 30,
         max: 60
       }
     };
 
-    if (value === "user" || value === "environment") {
+    if (
+      value === "user" ||
+      value === "environment"
+    ) {
       return {
         ...base,
-        facingMode: { ideal: value }
+
+        facingMode: {
+          ideal: value
+        }
       };
     }
 
     return {
       ...base,
-      deviceId: { exact: value }
+
+      deviceId: {
+        exact: value
+      }
     };
   }
 
@@ -386,13 +621,16 @@
     try {
       if (
         !window.isSecureContext ||
-        !navigator.mediaDevices?.getUserMedia
+        !navigator.mediaDevices
+          ?.getUserMedia
       ) {
-        throw new Error("Kamera memerlukan alamat HTTPS.");
+        throw new Error(
+          "Kamera memerlukan alamat HTTPS."
+        );
       }
 
       if (!modelReady) {
-        await initializeModel();
+        await ensureModelReady();
       }
 
       if (!modelReady) {
@@ -405,66 +643,109 @@
         playClick();
       }
 
-      const selected = el.camera.value || "user";
+      const selected =
+        el.camera.value || "user";
 
       const selectedText =
-        el.camera.selectedOptions[0]?.text.toLowerCase() || "";
+        el.camera
+          .selectedOptions[0]
+          ?.text
+          .toLowerCase() || "";
 
       frontCamera =
         selected === "user" ||
         selectedText.includes("depan");
 
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: cameraConstraints(selected)
-      });
+      stream =
+        await navigator.mediaDevices
+          .getUserMedia({
+            audio: false,
+
+            video:
+              cameraConstraints(selected)
+          });
 
       el.video.srcObject = stream;
+
       await el.video.play();
 
       cameraRunning = true;
       sessionActive = false;
-      gesturePhase = "NONE";
 
-      el.start.textContent = "⏹️ Berhenti";
-      el.start.classList.remove("btn-primary");
-      el.start.classList.add("btn-danger");
+      resetMotionGesture();
 
-      setStatus("MEMUAT AI", "waiting");
+      el.start.textContent =
+        "⏹️ Berhenti";
+
+      el.start.classList.remove(
+        "btn-primary"
+      );
+
+      el.start.classList.add(
+        "btn-danger"
+      );
+
+      setStatus(
+        "MEMUAT AI",
+        "waiting"
+      );
 
       showMessage(
         "🧍 Undur sehingga keseluruhan tubuh kelihatan."
       );
 
       await listCameras();
+
       frameLoop();
 
-      if (el.startMode.value === "motion") {
+      if (
+        el.startMode.value === "motion"
+      ) {
         el.gesture.hidden = false;
 
         el.gestureText.textContent =
-          "✋ Tunjuk tapak tangan...";
+          "✋ Tunjuk tapak tangan dan kekalkan terbuka...";
 
-        setStatus("MOTION...", "waiting");
+        setStatus(
+          "MOTION...",
+          "waiting"
+        );
       } else {
         el.gesture.hidden = true;
 
         const seconds =
-          Number(el.startMode.value.replace("timer_", "")) || 5;
+          Number(
+            el.startMode.value.replace(
+              "timer_",
+              ""
+            )
+          ) || 5;
 
         startCountdown(seconds);
       }
     } catch (error) {
-      console.error("Kamera gagal:", error);
+      console.error(
+        "Kamera gagal:",
+        error
+      );
 
-      const denied = error?.name === "NotAllowedError";
+      const denied =
+        error?.name ===
+        "NotAllowedError";
 
       const message = denied
         ? "Akses kamera ditolak. Benarkan Camera dalam tetapan Safari."
-        : error.message || "Kamera gagal dimulakan.";
+        : (
+            error.message ||
+            "Kamera gagal dimulakan."
+          );
 
       setStatus("RALAT", "error");
-      showMessage(`⚠️ ${message}`, true);
+
+      showMessage(
+        `⚠️ ${message}`,
+        true
+      );
 
       await stopCamera(false);
     } finally {
@@ -472,8 +753,11 @@
     }
   }
 
-  async function stopCamera(updateLabel = true) {
+  async function stopCamera(
+    updateLabel = true
+  ) {
     cancelAnimationFrame(animationId);
+
     animationId = 0;
 
     cancelCountdown();
@@ -484,25 +768,41 @@
     sessionActive = false;
     cameraRunning = false;
     processingFrame = false;
-    gesturePhase = "NONE";
     fullBodyVisible = false;
 
+    resetMotionGesture();
+
     if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
+      stream
+        .getTracks()
+        .forEach(
+          (track) => track.stop()
+        );
     }
 
     stream = null;
+
     el.video.srcObject = null;
+    el.video.removeAttribute("src");
+    el.video.load();
 
     el.gesture.hidden = true;
     el.meter.style.width = "0%";
 
+    clearCameraView();
+
     el.start.textContent = "▶️ Mula";
-    el.start.classList.remove("btn-danger");
-    el.start.classList.add("btn-primary");
+
+    el.start.classList.remove(
+      "btn-danger"
+    );
+
+    el.start.classList.add(
+      "btn-primary"
+    );
 
     if (updateLabel) {
-      setStatus("OFF", "ready");
+      setStatus("SEDIA", "ready");
 
       showMessage(
         "🧍 Tekan Mula dan benarkan akses kamera."
@@ -525,16 +825,23 @@
           image: el.video
         });
       } catch (error) {
-        console.error("Ralat bingkai AI:", error);
+        console.error(
+          "Ralat bingkai AI:",
+          error
+        );
       } finally {
         processingFrame = false;
       }
     }
 
-    animationId = requestAnimationFrame(frameLoop);
+    animationId =
+      requestAnimationFrame(frameLoop);
   }
 
-  function visible(point, minimum = 0.25) {
+  function visible(
+    point,
+    minimum = 0.25
+  ) {
     return (
       point &&
       (
@@ -544,8 +851,18 @@
     );
   }
 
-  function drawLine(pointA, pointB, color, width = 3) {
-    if (!visible(pointA) || !visible(pointB)) return;
+  function drawLine(
+    pointA,
+    pointB,
+    color,
+    width = 3
+  ) {
+    if (
+      !visible(pointA) ||
+      !visible(pointB)
+    ) {
+      return;
+    }
 
     ctx.beginPath();
 
@@ -562,10 +879,15 @@
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.lineCap = "round";
+
     ctx.stroke();
   }
 
-  function drawPoint(point, color, radius = 5) {
+  function drawPoint(
+    point,
+    color,
+    radius = 5
+  ) {
     if (!visible(point)) return;
 
     ctx.beginPath();
@@ -587,7 +909,8 @@
   }
 
   function drawSkeleton(results) {
-    const points = results.poseLandmarks;
+    const points =
+      results.poseLandmarks;
 
     if (points) {
       const torsoLines = [
@@ -620,21 +943,49 @@
         [28, 32]
       ];
 
-      torsoLines.forEach(([a, b]) => {
-        drawLine(points[a], points[b], "#38bdf8", 4);
-      });
+      torsoLines.forEach(
+        ([a, b]) => {
+          drawLine(
+            points[a],
+            points[b],
+            "#38bdf8",
+            4
+          );
+        }
+      );
 
-      armLines.forEach(([a, b]) => {
-        drawLine(points[a], points[b], "#00f3ff", 3);
-      });
+      armLines.forEach(
+        ([a, b]) => {
+          drawLine(
+            points[a],
+            points[b],
+            "#00f3ff",
+            3
+          );
+        }
+      );
 
-      legLines.forEach(([a, b]) => {
-        drawLine(points[a], points[b], "#22c55e", 4);
-      });
+      legLines.forEach(
+        ([a, b]) => {
+          drawLine(
+            points[a],
+            points[b],
+            "#22c55e",
+            4
+          );
+        }
+      );
 
-      footLines.forEach(([a, b]) => {
-        drawLine(points[a], points[b], "#ff9900", 3);
-      });
+      footLines.forEach(
+        ([a, b]) => {
+          drawLine(
+            points[a],
+            points[b],
+            "#ff9900",
+            3
+          );
+        }
+      );
 
       const pointIndexes = [
         11, 12, 13, 14,
@@ -643,17 +994,23 @@
         29, 30, 31, 32
       ];
 
-      pointIndexes.forEach((index) => {
-        drawPoint(
-          points[index],
-          index >= 27 ? "#ffdd00" : "#00f3ff"
-        );
-      });
+      pointIndexes.forEach(
+        (index) => {
+          drawPoint(
+            points[index],
+            index >= 27
+              ? "#ffdd00"
+              : "#00f3ff"
+          );
+        }
+      );
     }
 
     if (
-      typeof window.drawConnectors !== "function" ||
-      typeof window.drawLandmarks !== "function"
+      typeof window.drawConnectors !==
+        "function" ||
+      typeof window.drawLandmarks !==
+        "function"
     ) {
       return;
     }
@@ -692,74 +1049,300 @@
     if (!points) return false;
 
     const essentialPoints = [
-      11, 12,
-      23, 24,
-      25, 26,
-      27, 28
+      11,
+      12,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28
     ];
 
-    const visibleCount = essentialPoints.filter(
-      (index) => visible(points[index], 0.4)
-    ).length;
+    const visibleCount =
+      essentialPoints.filter(
+        (index) =>
+          visible(points[index], 0.4)
+      ).length;
 
     return visibleCount >= 7;
   }
 
-  function processGesture(hand) {
+  function distance2D(a, b) {
+    return Math.hypot(
+      a.x - b.x,
+      a.y - b.y
+    );
+  }
+
+  function isOpenPalm(hand) {
     if (
       !hand ||
+      hand.length < 21
+    ) {
+      return false;
+    }
+
+    const wrist = hand[0];
+
+    const palmSize =
+      distance2D(wrist, hand[9]);
+
+    if (palmSize < 0.025) {
+      return false;
+    }
+
+    const fingers = [
+      [8, 6],
+      [12, 10],
+      [16, 14],
+      [20, 18]
+    ];
+
+    const extendedFingers =
+      fingers.filter(
+        ([tip, pip]) => {
+          return (
+            distance2D(
+              wrist,
+              hand[tip]
+            ) >
+            distance2D(
+              wrist,
+              hand[pip]
+            ) * 1.12
+          );
+        }
+      ).length;
+
+    const thumbOpen =
+      distance2D(
+        hand[4],
+        hand[5]
+      ) >
+      palmSize * 0.55;
+
+    const fingersSpread =
+      distance2D(
+        hand[8],
+        hand[20]
+      ) >
+      palmSize * 0.75;
+
+    return (
+      extendedFingers >= 3 &&
+      (
+        thumbOpen ||
+        fingersSpread
+      )
+    );
+  }
+
+  function processGesture(
+    hand,
+    posePoints,
+    detectedSide
+  ) {
+    if (
       sessionActive ||
       countdownRunning
     ) {
       return;
     }
 
-    const wrist = hand[0];
-    const fingerTips = [4, 8, 12, 16, 20];
+    if (
+      gesturePhase ===
+      "WAVE_COMPLETE"
+    ) {
+      return;
+    }
 
-    const average = fingerTips.reduce(
-      (sum, index) => {
-        return sum + Math.hypot(
-          hand[index].x - wrist.x,
-          hand[index].y - wrist.y
-        );
-      },
-      0
-    ) / fingerTips.length;
+    const palmOpen =
+      isOpenPalm(hand);
+
+    let wristX =
+      palmOpen
+        ? hand[0].x
+        : null;
+
+    let palmWidth =
+      palmOpen
+        ? Math.max(
+            distance2D(
+              hand[5],
+              hand[17]
+            ),
+            0.04
+          )
+        : null;
 
     if (
-      gesturePhase === "NONE" &&
-      average > 0.22
+      !palmOpen &&
+      gesturePhase ===
+        "PALM_READY" &&
+      posePoints &&
+      gestureHandSide
     ) {
-      gesturePhase = "PALM_OPEN";
+      const wristIndex =
+        gestureHandSide === "LEFT"
+          ? 15
+          : 16;
+
+      const poseWrist =
+        posePoints[wristIndex];
+
+      if (
+        visible(poseWrist, 0.3)
+      ) {
+        wristX = poseWrist.x;
+      }
+    }
+
+    if (wristX === null) {
+      lostPalmFrames += 1;
+
+      if (lostPalmFrames > 18) {
+        resetMotionGesture(
+          "✋ Tapak tangan hilang. Tunjukkan semula..."
+        );
+      }
+
+      return;
+    }
+
+    lostPalmFrames = 0;
+
+    if (palmOpen) {
+      openPalmFrames += 1;
+    }
+
+    if (gesturePhase === "NONE") {
+      if (!palmOpen) return;
+
+      if (openPalmFrames < 6) {
+        el.gestureText.textContent =
+          "✋ Mengesan tapak tangan...";
+
+        return;
+      }
+
+      gesturePhase = "PALM_READY";
+
+      waveCenterX = wristX;
+
+      waveThresholdX = Math.max(
+        0.045,
+        palmWidth * 0.55
+      );
+
+      gestureHandSide =
+        detectedSide;
+
+      gestureStartedAt =
+        Date.now();
 
       el.gestureText.textContent =
-        "✋ Dikesan! Genggam tangan ✊ untuk mula";
-    } else if (
-      gesturePhase === "PALM_OPEN" &&
-      average < 0.14
-    ) {
-      gesturePhase = "FIST_CLOSED";
-      el.gesture.hidden = true;
+        "👋 Bagus! Lambai tangan kiri dan kanan";
 
-      startCountdown(3);
+      return;
+    }
+
+    if (
+      Date.now() -
+        gestureStartedAt >
+      6500
+    ) {
+      resetMotionGesture(
+        "⌛ Cuba lagi: tunjuk tapak tangan, kemudian lambai kiri–kanan"
+      );
+
+      return;
+    }
+
+    let currentSide = null;
+
+    if (
+      wristX <
+      waveCenterX - waveThresholdX
+    ) {
+      currentSide = "LEFT";
+    }
+
+    if (
+      wristX >
+      waveCenterX + waveThresholdX
+    ) {
+      currentSide = "RIGHT";
+    }
+
+    if (
+      !currentSide ||
+      currentSide === waveLastSide
+    ) {
+      return;
+    }
+
+    if (waveLastSide === null) {
+      waveLastSide = currentSide;
+
+      el.gestureText.textContent =
+        "👋 Sekarang lambai ke sebelah bertentangan...";
+
+      return;
+    }
+
+    waveLastSide = currentSide;
+    waveSideChanges += 1;
+
+    if (waveSideChanges >= 1) {
+      gesturePhase =
+        "WAVE_COMPLETE";
+
+      el.gestureText.textContent =
+        "✅ Lambai dikesan! Timer bermula";
+
+      gestureTimerId =
+        setTimeout(() => {
+          gestureTimerId = null;
+
+          if (!cameraRunning) {
+            return;
+          }
+
+          el.gesture.hidden = true;
+
+          startCountdown(3);
+        }, 250);
     }
   }
 
   function detectJump(points) {
     const shoulderY =
-      (points[11].y + points[12].y) / 2;
+      (
+        points[11].y +
+        points[12].y
+      ) / 2;
 
     const hipY =
-      (points[23].y + points[24].y) / 2;
+      (
+        points[23].y +
+        points[24].y
+      ) / 2;
 
     const ankleY =
-      (points[27].y + points[28].y) / 2;
+      (
+        points[27].y +
+        points[28].y
+      ) / 2;
 
     const torsoHeight =
-      Math.abs(hipY - shoulderY);
+      Math.abs(
+        hipY - shoulderY
+      );
 
-    if (torsoHeight < 0.045) return;
+    if (torsoHeight < 0.045) {
+      return;
+    }
 
     const bodyY =
       hipY * 0.7 +
@@ -771,6 +1354,7 @@
     ) {
       baselineBodyY = bodyY;
       baselineAnkleY = ankleY;
+
       return;
     }
 
@@ -781,16 +1365,20 @@
     };
 
     const selectedFactor =
-      sensitivityFactors[el.sensitivity.value] ||
+      sensitivityFactors[
+        el.sensitivity.value
+      ] ||
       sensitivityFactors.medium;
 
     const bodyRequired =
-      torsoHeight * selectedFactor;
+      torsoHeight *
+      selectedFactor;
 
     const ankleRequired =
       torsoHeight *
       (
-        el.sensitivity.value === "high"
+        el.sensitivity.value ===
+          "high"
           ? 0.08
           : 0.12
       );
@@ -812,11 +1400,14 @@
       )
     );
 
-    el.meter.style.width = `${progress}%`;
+    el.meter.style.width =
+      `${progress}%`;
 
     const now = Date.now();
 
-    if (jumpState === "STANDING") {
+    if (
+      jumpState === "STANDING"
+    ) {
       if (
         Math.abs(ankleLift) <
         ankleRequired * 0.45
@@ -833,15 +1424,21 @@
       if (
         bodyLift > bodyRequired &&
         ankleLift > ankleRequired &&
-        now - lastJumpAt > JUMP_COOLDOWN_MS
+        now - lastJumpAt >
+          JUMP_COOLDOWN_MS
       ) {
         jumpState = "IN_AIR";
 
-        setStatus("LOMPAT!", "jumping");
+        setStatus(
+          "LOMPAT!",
+          "jumping"
+        );
       }
     } else if (
-      bodyLift < bodyRequired * 0.3 &&
-      ankleLift < ankleRequired * 0.4
+      bodyLift <
+        bodyRequired * 0.3 &&
+      ankleLift <
+        ankleRequired * 0.4
     ) {
       jumpCount += 1;
 
@@ -851,7 +1448,10 @@
       jumpState = "STANDING";
       lastJumpAt = now;
 
-      setStatus("SEDIA", "ready");
+      setStatus(
+        "SEDIA",
+        "ready"
+      );
     }
   }
 
@@ -871,7 +1471,13 @@
     }
 
     ctx.save();
-    ctx.clearRect(0, 0, width, height);
+
+    ctx.clearRect(
+      0,
+      0,
+      width,
+      height
+    );
 
     if (frontCamera) {
       ctx.translate(width, 0);
@@ -886,9 +1492,10 @@
       height
     );
 
-    fullBodyVisible = validateBody(
-      results.poseLandmarks
-    );
+    fullBodyVisible =
+      validateBody(
+        results.poseLandmarks
+      );
 
     if (fullBodyVisible) {
       showMessage(
@@ -905,10 +1512,37 @@
       drawSkeleton(results);
     }
 
-    if (el.startMode.value === "motion") {
+    if (
+      el.startMode.value ===
+      "motion"
+    ) {
+      const hands = [
+        {
+          hand:
+            results.leftHandLandmarks,
+          side: "LEFT"
+        },
+        {
+          hand:
+            results.rightHandLandmarks,
+          side: "RIGHT"
+        }
+      ].filter(
+        (item) => item.hand
+      );
+
+      const selectedHand =
+        hands.find(
+          (item) =>
+            isOpenPalm(item.hand)
+        ) ||
+        hands[0] ||
+        {};
+
       processGesture(
-        results.leftHandLandmarks ||
-        results.rightHandLandmarks
+        selectedHand.hand,
+        results.poseLandmarks,
+        selectedHand.side
       );
     }
 
@@ -917,7 +1551,9 @@
       fullBodyVisible &&
       results.poseLandmarks
     ) {
-      detectJump(results.poseLandmarks);
+      detectJump(
+        results.poseLandmarks
+      );
     } else if (!sessionActive) {
       el.meter.style.width = "0%";
     }
@@ -927,11 +1563,6 @@
 
   function bindControls() {
     el.openSettings.addEventListener(
-      "click",
-      openModal
-    );
-
-    el.settings.addEventListener(
       "click",
       openModal
     );
@@ -953,7 +1584,9 @@
     el.modal.addEventListener(
       "click",
       (event) => {
-        if (event.target === el.modal) {
+        if (
+          event.target === el.modal
+        ) {
           closeModal();
         }
       }
@@ -961,7 +1594,7 @@
 
     el.reset.addEventListener(
       "click",
-      resetJumpData
+      resetApplication
     );
 
     el.start.addEventListener(
@@ -1007,7 +1640,9 @@
       (event) => {
         event.preventDefault();
 
-        deferredInstallPrompt = event;
+        deferredInstallPrompt =
+          event;
+
         el.install.hidden = false;
       }
     );
@@ -1015,10 +1650,16 @@
     el.install.addEventListener(
       "click",
       async () => {
-        if (!deferredInstallPrompt) return;
+        if (
+          !deferredInstallPrompt
+        ) {
+          return;
+        }
 
         deferredInstallPrompt.prompt();
-        deferredInstallPrompt = null;
+
+        deferredInstallPrompt =
+          null;
 
         el.install.hidden = true;
       }
@@ -1032,18 +1673,23 @@
           cameraRunning
         ) {
           await stopCamera();
-        } else if (!document.hidden) {
+        } else if (
+          !document.hidden
+        ) {
           checkForAppUpdate();
         }
       }
     );
   }
 
-  function activateWaitingWorker(registration) {
+  function activateWaitingWorker(
+    registration
+  ) {
     if (registration?.waiting) {
-      registration.waiting.postMessage({
-        type: "SKIP_WAITING"
-      });
+      registration.waiting
+        .postMessage({
+          type: "SKIP_WAITING"
+        });
     }
   }
 
@@ -1056,7 +1702,8 @@
     }
 
     try {
-      await serviceWorkerRegistration.update();
+      await serviceWorkerRegistration
+        .update();
 
       activateWaitingWorker(
         serviceWorkerRegistration
@@ -1070,7 +1717,11 @@
   }
 
   async function setupAutoUpdate() {
-    if (!("serviceWorker" in navigator)) {
+    if (
+      !(
+        "serviceWorker" in navigator
+      )
+    ) {
       return;
     }
 
@@ -1078,49 +1729,57 @@
       navigator.serviceWorker.controller
     );
 
-    navigator.serviceWorker.addEventListener(
-      "controllerchange",
-      () => {
-        if (
-          !hadController ||
-          reloadingForUpdate
-        ) {
-          return;
-        }
+    navigator.serviceWorker
+      .addEventListener(
+        "controllerchange",
+        () => {
+          if (
+            !hadController ||
+            reloadingForUpdate
+          ) {
+            return;
+          }
 
-        reloadingForUpdate = true;
-        window.location.reload();
-      }
-    );
+          reloadingForUpdate = true;
 
-    serviceWorkerRegistration =
-      await navigator.serviceWorker.register(
-        "./sw.js",
-        {
-          updateViaCache: "none"
+          window.location.reload();
         }
       );
 
-    serviceWorkerRegistration.addEventListener(
-      "updatefound",
-      () => {
-        const worker =
-          serviceWorkerRegistration.installing;
-
-        if (!worker) return;
-
-        worker.addEventListener(
-          "statechange",
-          () => {
-            if (worker.state === "installed") {
-              activateWaitingWorker(
-                serviceWorkerRegistration
-              );
-            }
+    serviceWorkerRegistration =
+      await navigator.serviceWorker
+        .register(
+          "./sw.js",
+          {
+            updateViaCache: "none"
           }
         );
-      }
-    );
+
+    serviceWorkerRegistration
+      .addEventListener(
+        "updatefound",
+        () => {
+          const worker =
+            serviceWorkerRegistration
+              .installing;
+
+          if (!worker) return;
+
+          worker.addEventListener(
+            "statechange",
+            () => {
+              if (
+                worker.state ===
+                "installed"
+              ) {
+                activateWaitingWorker(
+                  serviceWorkerRegistration
+                );
+              }
+            }
+          );
+        }
+      );
 
     activateWaitingWorker(
       serviceWorkerRegistration
@@ -1140,14 +1799,16 @@
     bindControls();
     loadPreferences();
 
-    setupAutoUpdate().catch((error) => {
-      console.warn(
-        "Kemas kini automatik:",
-        error
-      );
-    });
+    setupAutoUpdate().catch(
+      (error) => {
+        console.warn(
+          "Kemas kini automatik:",
+          error
+        );
+      }
+    );
 
-    await initializeModel();
+    await ensureModelReady();
     await listCameras();
   }
 
