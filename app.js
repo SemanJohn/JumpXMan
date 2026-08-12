@@ -4,16 +4,23 @@ const canvasCtx = canvasElement.getContext('2d');
 
 const startBtn = document.getElementById('start-btn');
 const resetBtn = document.getElementById('reset-btn');
+const settingsBtn = document.getElementById('settings-btn');
+const openSettingsBtn = document.getElementById('open-settings-btn');
+const closeSettingsBtn = document.getElementById('close-settings-btn');
+const saveSettingsBtn = document.getElementById('save-settings-btn');
 
+const settingsModal = document.getElementById('settings-modal');
 const cameraSelect = document.getElementById('camera-select');
 const sensitivitySelect = document.getElementById('sensitivity-select');
+const skeletonToggle = document.getElementById('skeleton-toggle');
+
+const metronomeToggle = document.getElementById('metronome-toggle');
+const bpmSlider = document.getElementById('bpm-slider');
+const bpmValueEl = document.getElementById('bpm-value');
 
 const jumpCountEl = document.getElementById('jump-count');
 const jumpStatusEl = document.getElementById('jump-status');
 const jumpMeterBar = document.getElementById('jump-meter-bar');
-
-const skeletonToggle = document.getElementById('skeleton-toggle');
-const soundToggle = document.getElementById('sound-toggle');
 const pwaInstallBtn = document.getElementById('pwa-install-btn');
 
 let camera = null;
@@ -28,25 +35,49 @@ let lastJumpTime = 0;
 const JUMP_COOLDOWN_MS = 250;
 
 let audioCtx = null;
+let metronomeIntervalId = null;
 
-function playBeep() {
-  if (!soundToggle.checked) return;
+function playMetronomeClick() {
   try {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.04);
+
     osc.connect(gain);
     gain.connect(audioCtx.destination);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.18);
-  } catch (e) { console.error("Audio error:", e); }
+    osc.stop(audioCtx.currentTime + 0.04);
+  } catch (e) { console.error("Audio Error:", e); }
 }
+
+function updateMetronomeState() {
+  if (metronomeIntervalId) {
+    clearInterval(metronomeIntervalId);
+    metronomeIntervalId = null;
+  }
+
+  if (isRunning && metronomeToggle.checked) {
+    const bpm = parseInt(bpmSlider.value, 10) || 60;
+    const intervalMs = (60 / bpm) * 1000;
+
+    playMetronomeClick();
+    metronomeIntervalId = setInterval(playMetronomeClick, intervalMs);
+  }
+}
+
+bpmSlider.addEventListener('input', () => {
+  bpmValueEl.textContent = `${bpmSlider.value} BPM`;
+  updateMetronomeState();
+});
+
+metronomeToggle.addEventListener('change', updateMetronomeState);
 
 function initHolistic() {
   holistic = new Holistic({
@@ -79,7 +110,7 @@ async function getCameras() {
 
     const optBack = document.createElement('option');
     optBack.value = 'environment';
-    optBack.text = '📷 Kamera Belakang (Utama)';
+    optBack.text = '📷 Kamera Belakang (Utama / Depth Scan)';
     cameraSelect.appendChild(optBack);
 
     videoDevices.forEach((device, index) => {
@@ -111,19 +142,24 @@ async function startCamera() {
 
   camera = new Camera(videoElement, {
     onFrame: async () => { await holistic.send({ image: videoElement }); },
-    width: 640,
-    height: 480,
+    width: { ideal: 1280, max: 1920 },
+    height: { ideal: 720, max: 1080 },
+    frameRate: { ideal: 60, min: 30 },
     facingMode: configFacing,
     deviceId: configDeviceId
   });
 
   await camera.start();
   isRunning = true;
-  startBtn.innerHTML = '⏸️ Hentikan Kamera';
+
+  startBtn.innerHTML = '⏸️ Berhenti';
   startBtn.classList.remove('btn-primary');
   startBtn.classList.add('btn-danger');
+  
   jumpStatusEl.textContent = 'SEDIA';
   jumpStatusEl.className = 'status-badge ready';
+
+  updateMetronomeState();
 }
 
 async function stopCamera() {
@@ -131,12 +167,16 @@ async function stopCamera() {
     try { await camera.stop(); } catch (e) {}
   }
   isRunning = false;
-  startBtn.innerHTML = '▶️ Mula Kamera';
+
+  startBtn.innerHTML = '▶️ Mula';
   startBtn.classList.remove('btn-danger');
   startBtn.classList.add('btn-primary');
+  
   jumpStatusEl.textContent = 'OFF';
   jumpStatusEl.className = 'status-badge ready';
   jumpMeterBar.style.width = '0%';
+
+  updateMetronomeState();
 }
 
 async function toggleCamera() {
@@ -149,7 +189,6 @@ cameraSelect.addEventListener('change', async () => {
   if (isRunning) await startCamera();
 });
 
-// Helper Lukisan Canvas Khas (Custom Skeleton Render)
 function drawLine(ctx, p1, p2, color, width = 3) {
   if (!p1 || !p2 || (p1.visibility !== undefined && p1.visibility < 0.2) || (p2.visibility !== undefined && p2.visibility < 0.2)) return;
   ctx.beginPath();
@@ -180,47 +219,38 @@ function drawCustomSkeleton(ctx, results) {
   const lm = results.poseLandmarks;
 
   if (lm) {
-    // 1. Torso / Pinggul (Biru Neon)
     drawLine(ctx, lm[11], lm[12], '#38bdf8', 4);
     drawLine(ctx, lm[23], lm[24], '#38bdf8', 4);
     drawLine(ctx, lm[11], lm[23], '#38bdf8', 4);
     drawLine(ctx, lm[12], lm[24], '#38bdf8', 4);
 
-    // 2. Tangan & Lengan (Cyan Neon)
     drawLine(ctx, lm[11], lm[13], '#00f3ff', 3);
     drawLine(ctx, lm[13], lm[15], '#00f3ff', 3);
     drawLine(ctx, lm[12], lm[14], '#00f3ff', 3);
     drawLine(ctx, lm[14], lm[16], '#00f3ff', 3);
 
-    // 3. Kaki (Hijau Lime Neon)
     drawLine(ctx, lm[23], lm[25], '#22c55e', 4);
     drawLine(ctx, lm[25], lm[27], '#22c55e', 4);
     drawLine(ctx, lm[24], lm[26], '#22c55e', 4);
     drawLine(ctx, lm[26], lm[28], '#22c55e', 4);
 
-    // 4. KAKI & JARI KAKI (FEET & TOES - Oren Neon)
-    // Left Foot: Ankle -> Heel -> Toe Index -> Ankle
     drawLine(ctx, lm[27], lm[29], '#ff9900', 3);
     drawLine(ctx, lm[29], lm[31], '#ff9900', 3);
     drawLine(ctx, lm[27], lm[31], '#ff9900', 3);
 
-    // Right Foot: Ankle -> Heel -> Toe Index -> Ankle
     drawLine(ctx, lm[28], lm[30], '#ff9900', 3);
     drawLine(ctx, lm[30], lm[32], '#ff9900', 3);
     drawLine(ctx, lm[28], lm[32], '#ff9900', 3);
 
-    // Sendi Kaki & Jari Kaki
     [27, 28, 29, 30, 31, 32].forEach(idx => {
       drawPoint(ctx, lm[idx], '#ffdd00', '#ffffff', 5);
     });
 
-    // Sendi Badan Utama
     [11, 12, 13, 14, 15, 16, 23, 24, 25, 26].forEach(idx => {
       drawPoint(ctx, lm[idx], '#00f3ff', '#ffffff', 5);
     });
   }
 
-  // 5. DETEKSI 5 JARI TANGAN (HANDS - Pink/Magenta & Yellow)
   if (results.leftHandLandmarks) {
     drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#ff007f', lineWidth: 2 });
     drawLandmarks(ctx, results.leftHandLandmarks, { color: '#ffdd00', fillColor: '#ffffff', lineWidth: 1, radius: 3 });
@@ -317,7 +347,6 @@ function detectJump(landmarks) {
     if (currentBodyY > landThreshold) {
       jumpCount++;
       jumpCountEl.textContent = jumpCount;
-      playBeep();
 
       state = 'STANDING';
       lastJumpTime = now;
@@ -336,6 +365,16 @@ resetBtn.addEventListener('click', () => {
   jumpStatusEl.className = 'status-badge ready';
   jumpMeterBar.style.width = '0%';
 });
+
+function toggleSettingsModal(show) {
+  if (show) settingsModal.classList.add('active');
+  else settingsModal.classList.remove('active');
+}
+
+openSettingsBtn.addEventListener('click', () => toggleSettingsModal(true));
+settingsBtn.addEventListener('click', () => toggleSettingsModal(true));
+closeSettingsBtn.addEventListener('click', () => toggleSettingsModal(false));
+saveSettingsBtn.addEventListener('click', () => toggleSettingsModal(false));
 
 startBtn.addEventListener('click', toggleCamera);
 
