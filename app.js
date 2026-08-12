@@ -149,10 +149,88 @@ cameraSelect.addEventListener('change', async () => {
   if (isRunning) await startCamera();
 });
 
-// Penapisan Sambungan POSE tanpa Titik Muka (Hanya Bahu ke bawah)
-const BODY_POSE_CONNECTIONS = POSE_CONNECTIONS.filter(([start, end]) => {
-  return start >= 11 && end >= 11;
-});
+// Helper Lukisan Canvas Khas (Custom Skeleton Render)
+function drawLine(ctx, p1, p2, color, width = 3) {
+  if (!p1 || !p2 || (p1.visibility !== undefined && p1.visibility < 0.2) || (p2.visibility !== undefined && p2.visibility < 0.2)) return;
+  ctx.beginPath();
+  ctx.moveTo(p1.x * ctx.canvas.width, p1.y * ctx.canvas.height);
+  ctx.lineTo(p2.x * ctx.canvas.width, p2.y * ctx.canvas.height);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+}
+
+function drawPoint(ctx, p, fillColor, strokeColor, radius = 5) {
+  if (!p || (p.visibility !== undefined && p.visibility < 0.2)) return;
+  const x = p.x * ctx.canvas.width;
+  const y = p.y * ctx.canvas.height;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, 2 * Math.PI);
+  ctx.fillStyle = fillColor;
+  ctx.fill();
+  if (strokeColor) {
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+function drawCustomSkeleton(ctx, results) {
+  const lm = results.poseLandmarks;
+
+  if (lm) {
+    // 1. Torso / Pinggul (Biru Neon)
+    drawLine(ctx, lm[11], lm[12], '#38bdf8', 4);
+    drawLine(ctx, lm[23], lm[24], '#38bdf8', 4);
+    drawLine(ctx, lm[11], lm[23], '#38bdf8', 4);
+    drawLine(ctx, lm[12], lm[24], '#38bdf8', 4);
+
+    // 2. Tangan & Lengan (Cyan Neon)
+    drawLine(ctx, lm[11], lm[13], '#00f3ff', 3);
+    drawLine(ctx, lm[13], lm[15], '#00f3ff', 3);
+    drawLine(ctx, lm[12], lm[14], '#00f3ff', 3);
+    drawLine(ctx, lm[14], lm[16], '#00f3ff', 3);
+
+    // 3. Kaki (Hijau Lime Neon)
+    drawLine(ctx, lm[23], lm[25], '#22c55e', 4);
+    drawLine(ctx, lm[25], lm[27], '#22c55e', 4);
+    drawLine(ctx, lm[24], lm[26], '#22c55e', 4);
+    drawLine(ctx, lm[26], lm[28], '#22c55e', 4);
+
+    // 4. KAKI & JARI KAKI (FEET & TOES - Oren Neon)
+    // Left Foot: Ankle -> Heel -> Toe Index -> Ankle
+    drawLine(ctx, lm[27], lm[29], '#ff9900', 3);
+    drawLine(ctx, lm[29], lm[31], '#ff9900', 3);
+    drawLine(ctx, lm[27], lm[31], '#ff9900', 3);
+
+    // Right Foot: Ankle -> Heel -> Toe Index -> Ankle
+    drawLine(ctx, lm[28], lm[30], '#ff9900', 3);
+    drawLine(ctx, lm[30], lm[32], '#ff9900', 3);
+    drawLine(ctx, lm[28], lm[32], '#ff9900', 3);
+
+    // Sendi Kaki & Jari Kaki
+    [27, 28, 29, 30, 31, 32].forEach(idx => {
+      drawPoint(ctx, lm[idx], '#ffdd00', '#ffffff', 5);
+    });
+
+    // Sendi Badan Utama
+    [11, 12, 13, 14, 15, 16, 23, 24, 25, 26].forEach(idx => {
+      drawPoint(ctx, lm[idx], '#00f3ff', '#ffffff', 5);
+    });
+  }
+
+  // 5. DETEKSI 5 JARI TANGAN (HANDS - Pink/Magenta & Yellow)
+  if (results.leftHandLandmarks) {
+    drawConnectors(ctx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#ff007f', lineWidth: 2 });
+    drawLandmarks(ctx, results.leftHandLandmarks, { color: '#ffdd00', fillColor: '#ffffff', lineWidth: 1, radius: 3 });
+  }
+
+  if (results.rightHandLandmarks) {
+    drawConnectors(ctx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: '#ff007f', lineWidth: 2 });
+    drawLandmarks(ctx, results.rightHandLandmarks, { color: '#ffdd00', fillColor: '#ffffff', lineWidth: 1, radius: 3 });
+  }
+}
 
 function onResults(results) {
   canvasElement.width = videoElement.videoWidth || 640;
@@ -169,28 +247,7 @@ function onResults(results) {
   canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
   if (skeletonToggle.checked) {
-    // 1. Skeleton Badan (Bahu ke Bawah) - Muka Dikeluarkan
-    if (results.poseLandmarks) {
-      const bodyLandmarks = results.poseLandmarks.map((lm, index) => {
-        if (index < 11) return { x: 0, y: 0, z: 0, visibility: 0 };
-        return lm;
-      });
-
-      drawConnectors(canvasCtx, bodyLandmarks, BODY_POSE_CONNECTIONS, { color: '#00f3ff', lineWidth: 3 });
-      drawLandmarks(canvasCtx, bodyLandmarks, { color: '#38bdf8', fillColor: '#ffffff', lineWidth: 2, radius: 4 });
-    }
-
-    // 2. Deteksi 5 Jari Tangan Kiri
-    if (results.leftHandLandmarks) {
-      drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS, { color: '#ff007f', lineWidth: 2 });
-      drawLandmarks(canvasCtx, results.leftHandLandmarks, { color: '#ffdd00', fillColor: '#ffffff', lineWidth: 1, radius: 3 });
-    }
-
-    // 3. Deteksi 5 Jari Tangan Kanan
-    if (results.rightHandLandmarks) {
-      drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS, { color: '#ff007f', lineWidth: 2 });
-      drawLandmarks(canvasCtx, results.rightHandLandmarks, { color: '#ffdd00', fillColor: '#ffffff', lineWidth: 1, radius: 3 });
-    }
+    drawCustomSkeleton(canvasCtx, results);
   }
 
   if (results.poseLandmarks) {
@@ -210,14 +267,14 @@ function detectJump(landmarks) {
   const rightHip = landmarks[24];
 
   if (!leftShoulder || !rightShoulder || !leftHip || !rightHip ||
-      leftHip.visibility < 0.4 || rightHip.visibility < 0.4) {
+      leftHip.visibility < 0.3 || rightHip.visibility < 0.3) {
     jumpMeterBar.style.width = '0%';
     return;
   }
 
   const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
   const hipY = (leftHip.y + rightHip.y) / 2;
-  const noseY = (nose && nose.visibility > 0.4) ? nose.y : shoulderY - 0.15;
+  const noseY = (nose && nose.visibility > 0.3) ? nose.y : shoulderY - 0.15;
 
   const currentBodyY = (noseY * 0.3) + (shoulderY * 0.35) + (hipY * 0.35);
   const torsoHeight = Math.abs(hipY - shoulderY);
