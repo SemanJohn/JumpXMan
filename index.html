@@ -46,12 +46,23 @@
           </div>
         </div>
 
+        <!-- Countdown Overlay -->
+        <div id="countdown-overlay" class="countdown-overlay" style="display:none;">
+          <span id="countdown-number">3</span>
+        </div>
+
+        <!-- Gesture Toast Overlay -->
+        <div id="gesture-toast" class="gesture-toast" style="display:none;">
+          <span id="gesture-text">✋ Tunjuk Tapak Tangan...</span>
+        </div>
+
         <div class="jump-meter-container">
           <div id="jump-meter-bar" class="jump-meter-bar"></div>
         </div>
 
+        <!-- Full Body Warning Overlay -->
         <div id="calibration-msg" class="calibration-overlay">
-          <p>🧍 Pastikan badan dan kaki kelihatan di kamera.</p>
+          <p id="calibration-text">🧍 Pastikan badan dan kaki kelihatan di kamera.</p>
         </div>
       </div>
     </main>
@@ -71,6 +82,16 @@
         </div>
 
         <div class="modal-body">
+          <div class="setting-row">
+            <label for="start-mode-select" class="setting-label">🚀 Cara Mula Sesi:</label>
+            <select id="start-mode-select" class="select-input">
+              <option value="timer_5" selected>Timer 5 Saat</option>
+              <option value="timer_10">Timer 10 Saat</option>
+              <option value="timer_3">Timer 3 Saat</option>
+              <option value="motion">Motion (Tapak Tangan ✋ & Genggam ✊)</option>
+            </select>
+          </div>
+
           <div class="setting-row">
             <label for="camera-select" class="setting-label">📷 Pilihan Kamera:</label>
             <select id="camera-select" class="select-input">
