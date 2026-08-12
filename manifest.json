@@ -1,0 +1,22 @@
+{
+  "name": "JumpXMan - Pengira Lompatan AI & Deteksi 5 Jari",
+  "short_name": "JumpXMan",
+  "description": "Aplikasi JumpXMan untuk pengesan dan pengira lompatan dengan visualisasi rangka badan dan 5 jari tangan secara nyata menggunakan AI.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
