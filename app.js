@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const APP_VERSION = "2.1.0";
+  const APP_VERSION = "2.1.1";
   const UPDATE_CHECK_MS = 5 * 60 * 1000;
   const JUMP_COOLDOWN_MS = 450;
 
@@ -55,7 +55,7 @@
   let fullBodyVisible = false;
   let frontCamera = true;
 
-  let count = 0;
+  let jumpCount = 0;
   let jumpState = "STANDING";
   let baselineBodyY = null;
   let baselineAnkleY = null;
@@ -96,7 +96,7 @@
   }
 
   function resetJumpData() {
-    count = 0;
+    jumpCount = 0;
     jumpState = "STANDING";
     baselineBodyY = null;
     baselineAnkleY = null;
@@ -157,6 +157,7 @@
       const bpm = Number(el.bpm.value) || 60;
 
       playClick();
+
       metronomeId = setInterval(
         playClick,
         60000 / bpm
@@ -304,7 +305,7 @@
       modelReady = false;
 
       showMessage(
-        "⚠️ AI gagal dimulakan. Muat semula halaman.",
+        "⚠️ AI gagal dimulakan. Muat semula aplikasi.",
         true
       );
     }
@@ -342,11 +343,11 @@
         );
       });
 
-      const stillExists = [...el.camera.options].some(
+      const cameraExists = [...el.camera.options].some(
         (option) => option.value === current
       );
 
-      if (stillExists) {
+      if (cameraExists) {
         el.camera.value = current;
       }
     } catch (error) {
@@ -387,9 +388,7 @@
         !window.isSecureContext ||
         !navigator.mediaDevices?.getUserMedia
       ) {
-        throw new Error(
-          "Kamera memerlukan alamat HTTPS."
-        );
+        throw new Error("Kamera memerlukan alamat HTTPS.");
       }
 
       if (!modelReady) {
@@ -442,6 +441,7 @@
 
       if (el.startMode.value === "motion") {
         el.gesture.hidden = false;
+
         el.gestureText.textContent =
           "✋ Tunjuk tapak tangan...";
 
@@ -450,9 +450,7 @@
         el.gesture.hidden = true;
 
         const seconds =
-          Number(
-            el.startMode.value.replace("timer_", "")
-          ) || 5;
+          Number(el.startMode.value.replace("timer_", "")) || 5;
 
         startCountdown(seconds);
       }
@@ -546,18 +544,19 @@
     );
   }
 
-  function drawLine(a, b, color, width = 3) {
-    if (!visible(a) || !visible(b)) return;
+  function drawLine(pointA, pointB, color, width = 3) {
+    if (!visible(pointA) || !visible(pointB)) return;
 
     ctx.beginPath();
+
     ctx.moveTo(
-      a.x * el.canvas.width,
-      a.y * el.canvas.height
+      pointA.x * el.canvas.width,
+      pointA.y * el.canvas.height
     );
 
     ctx.lineTo(
-      b.x * el.canvas.width,
-      b.y * el.canvas.height
+      pointB.x * el.canvas.width,
+      pointB.y * el.canvas.height
     );
 
     ctx.strokeStyle = color;
@@ -582,7 +581,7 @@
     ctx.fillStyle = color;
     ctx.fill();
 
-    ctx.strokeStyle = "#fff";
+    ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
@@ -591,49 +590,60 @@
     const points = results.poseLandmarks;
 
     if (points) {
-      [
+      const torsoLines = [
         [11, 12],
         [11, 23],
         [12, 24],
         [23, 24]
-      ].forEach(([a, b]) =>
-        drawLine(points[a], points[b], "#38bdf8", 4)
-      );
+      ];
 
-      [
+      const armLines = [
         [11, 13],
         [13, 15],
         [12, 14],
         [14, 16]
-      ].forEach(([a, b]) =>
-        drawLine(points[a], points[b], "#00f3ff", 3)
-      );
+      ];
 
-      [
+      const legLines = [
         [23, 25],
         [25, 27],
         [24, 26],
         [26, 28]
-      ].forEach(([a, b]) =>
-        drawLine(points[a], points[b], "#22c55e", 4)
-      );
+      ];
 
-      [
+      const footLines = [
         [27, 29],
         [29, 31],
         [27, 31],
         [28, 30],
         [30, 32],
         [28, 32]
-      ].forEach(([a, b]) =>
-        drawLine(points[a], points[b], "#ff9900", 3)
-      );
+      ];
 
-      [
-        11, 12, 13, 14, 15, 16,
-        23, 24, 25, 26,
-        27, 28, 29, 30, 31, 32
-      ].forEach((index) => {
+      torsoLines.forEach(([a, b]) => {
+        drawLine(points[a], points[b], "#38bdf8", 4);
+      });
+
+      armLines.forEach(([a, b]) => {
+        drawLine(points[a], points[b], "#00f3ff", 3);
+      });
+
+      legLines.forEach(([a, b]) => {
+        drawLine(points[a], points[b], "#22c55e", 4);
+      });
+
+      footLines.forEach(([a, b]) => {
+        drawLine(points[a], points[b], "#ff9900", 3);
+      });
+
+      const pointIndexes = [
+        11, 12, 13, 14,
+        15, 16, 23, 24,
+        25, 26, 27, 28,
+        29, 30, 31, 32
+      ];
+
+      pointIndexes.forEach((index) => {
         drawPoint(
           points[index],
           index >= 27 ? "#ffdd00" : "#00f3ff"
@@ -666,25 +676,29 @@
         }
       );
 
-      window.drawLandmarks(ctx, hand, {
-        color: "#ffdd00",
-        fillColor: "#fff",
-        radius: 3
-      });
+      window.drawLandmarks(
+        ctx,
+        hand,
+        {
+          color: "#ffdd00",
+          fillColor: "#ffffff",
+          radius: 3
+        }
+      );
     }
   }
 
   function validateBody(points) {
     if (!points) return false;
 
-    const essential = [
+    const essentialPoints = [
       11, 12,
       23, 24,
       25, 26,
       27, 28
     ];
 
-    const visibleCount = essential.filter(
+    const visibleCount = essentialPoints.filter(
       (index) => visible(points[index], 0.4)
     ).length;
 
@@ -701,8 +715,9 @@
     }
 
     const wrist = hand[0];
+    const fingerTips = [4, 8, 12, 16, 20];
 
-    const average = [4, 8, 12, 16, 20].reduce(
+    const average = fingerTips.reduce(
       (sum, index) => {
         return sum + Math.hypot(
           hand[index].x - wrist.x,
@@ -710,7 +725,7 @@
         );
       },
       0
-    ) / 5;
+    ) / fingerTips.length;
 
     if (
       gesturePhase === "NONE" &&
@@ -741,10 +756,10 @@
     const ankleY =
       (points[27].y + points[28].y) / 2;
 
-    const torso =
+    const torsoHeight =
       Math.abs(hipY - shoulderY);
 
-    if (torso < 0.045) return;
+    if (torsoHeight < 0.045) return;
 
     const bodyY =
       hipY * 0.7 +
@@ -759,21 +774,21 @@
       return;
     }
 
-    const factors = {
+    const sensitivityFactors = {
       high: 0.075,
       medium: 0.115,
       low: 0.17
     };
 
+    const selectedFactor =
+      sensitivityFactors[el.sensitivity.value] ||
+      sensitivityFactors.medium;
+
     const bodyRequired =
-      torso *
-      (
-        factors[el.sensitivity.value] ||
-        factors.medium
-      );
+      torsoHeight * selectedFactor;
 
     const ankleRequired =
-      torso *
+      torsoHeight *
       (
         el.sensitivity.value === "high"
           ? 0.08
@@ -821,14 +836,17 @@
         now - lastJumpAt > JUMP_COOLDOWN_MS
       ) {
         jumpState = "IN_AIR";
+
         setStatus("LOMPAT!", "jumping");
       }
     } else if (
       bodyLift < bodyRequired * 0.3 &&
       ankleLift < ankleRequired * 0.4
     ) {
-      count += 1;
-      el.count.textContent = String(count);
+      jumpCount += 1;
+
+      el.count.textContent =
+        String(jumpCount);
 
       jumpState = "STANDING";
       lastJumpAt = now;
@@ -1038,31 +1056,6 @@
     }
 
     try {
-      const response = await fetch(
-        `./version.json?t=${Date.now()}`,
-        {
-          cache: "no-store"
-        }
-      );
-
-      if (response.ok) {
-        const remote = await response.json();
-
-        if (
-          remote.version &&
-          remote.version !== APP_VERSION
-        ) {
-          setStatus(
-            "KEMAS KINI",
-            "waiting"
-          );
-
-          showMessage(
-            `⬆️ Versi ${remote.version} ditemui. Aplikasi sedang dikemas kini.`
-          );
-        }
-      }
-
       await serviceWorkerRegistration.update();
 
       activateWaitingWorker(
