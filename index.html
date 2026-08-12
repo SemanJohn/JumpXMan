@@ -2,7 +2,7 @@
 <html lang="ms">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>JumpXMan - Pengira Lompatan AI & Deteksi 5 Jari</title>
   
   <link rel="manifest" href="manifest.json">
@@ -13,7 +13,6 @@
 
   <link rel="stylesheet" href="style.css">
 
-  <!-- MediaPipe Holistic & Drawing Utils CDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js" crossorigin="anonymous"></script>
@@ -49,7 +48,7 @@
         </div>
 
         <div id="calibration-msg" class="calibration-overlay">
-          <p>🧍 Pastikan badan dan tangan (5 jari) kelihatan di kamera.</p>
+          <p>🧍 Pastikan badan dan tangan kelihatan di kamera.</p>
         </div>
       </div>
     </main>
@@ -57,39 +56,39 @@
     <section class="controls-panel">
       <div class="btn-group">
         <button id="start-btn" class="btn btn-primary">▶️ Mula Kamera</button>
-        <button id="switch-cam-btn" class="btn btn-secondary">🔄 Kamera: Depan</button>
         <button id="reset-btn" class="btn btn-danger">🔄 Semula</button>
       </div>
 
-      <div class="settings-grid">
-        <div class="setting-item">
-          <label for="sensitivity-select">Kepekaan Lompatan:</label>
-          <select id="sensitivity-select" class="select-input">
-            <option value="high">Tinggi (Mudah Dikesan)</option>
-            <option value="medium" selected>Sederhana (Disyorkan)</option>
-            <option value="low">Rendah (Lompatan Tinggi)</option>
-          </select>
-        </div>
+      <div class="control-row">
+        <label for="camera-select" class="input-label">📷 Kamera:</label>
+        <select id="camera-select" class="select-input">
+          <option value="">Memuatkan kamera...</option>
+        </select>
+      </div>
 
-        <div class="toggle-group">
-          <label class="toggle-switch">
-            <input type="checkbox" id="skeleton-toggle" checked>
-            <span class="slider"></span>
-            <span class="toggle-label">Skeleton & 5 Jari</span>
-          </label>
+      <div class="control-row">
+        <label for="sensitivity-select" class="input-label">⚡ Kepekaan:</label>
+        <select id="sensitivity-select" class="select-input">
+          <option value="high">Tinggi (Lompatan Kecil)</option>
+          <option value="medium" selected>Sederhana (Disyorkan)</option>
+          <option value="low">Rendah (Lompatan Tinggi)</option>
+        </select>
+      </div>
 
-          <label class="toggle-switch">
-            <input type="checkbox" id="sound-toggle" checked>
-            <span class="slider"></span>
-            <span class="toggle-label">Bunyi</span>
-          </label>
-        </div>
+      <div class="toggle-group">
+        <label class="toggle-switch">
+          <input type="checkbox" id="skeleton-toggle" checked>
+          <span class="slider"></span>
+          <span class="toggle-label">Skeleton & 5 Jari</span>
+        </label>
+
+        <label class="toggle-switch">
+          <input type="checkbox" id="sound-toggle" checked>
+          <span class="slider"></span>
+          <span class="toggle-label">Bunyi</span>
+        </label>
       </div>
     </section>
-
-    <footer class="app-footer">
-      <p>JumpXMan &copy; 2026 - Powered by MediaPipe Holistic & PWA</p>
-    </footer>
   </div>
 
   <script src="app.js"></script>
