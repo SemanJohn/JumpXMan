@@ -3,14 +3,15 @@ const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 
 const startBtn = document.getElementById('start-btn');
-const switchCamBtn = document.getElementById('switch-cam-btn');
 const resetBtn = document.getElementById('reset-btn');
+
+const cameraSelect = document.getElementById('camera-select');
+const sensitivitySelect = document.getElementById('sensitivity-select');
 
 const jumpCountEl = document.getElementById('jump-count');
 const jumpStatusEl = document.getElementById('jump-status');
 const jumpMeterBar = document.getElementById('jump-meter-bar');
 
-const sensitivitySelect = document.getElementById('sensitivity-select');
 const skeletonToggle = document.getElementById('skeleton-toggle');
 const soundToggle = document.getElementById('sound-toggle');
 const pwaInstallBtn = document.getElementById('pwa-install-btn');
@@ -18,7 +19,7 @@ const pwaInstallBtn = document.getElementById('pwa-install-btn');
 let camera = null;
 let holistic = null;
 let isRunning = false;
-let currentFacingMode = 'user';
+let isFrontCamera = true;
 let jumpCount = 0;
 
 let baselineBodyY = null;
@@ -64,16 +65,56 @@ function initHolistic() {
   holistic.onResults(onResults);
 }
 
+async function getCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    
+    cameraSelect.innerHTML = '';
+
+    const optFront = document.createElement('option');
+    optFront.value = 'user';
+    optFront.text = '📷 Kamera Depan (Selfie)';
+    cameraSelect.appendChild(optFront);
+
+    const optBack = document.createElement('option');
+    optBack.value = 'environment';
+    optBack.text = '📷 Kamera Belakang (Utama)';
+    cameraSelect.appendChild(optBack);
+
+    videoDevices.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Kamera ${index + 1}`;
+      cameraSelect.appendChild(option);
+    });
+  } catch (err) { console.error("Gagal kamera:", err); }
+}
+
 async function startCamera() {
   if (camera) {
     try { await camera.stop(); } catch (e) {}
   }
 
+  const selectedValue = cameraSelect.value || 'user';
+  let configFacing = 'user';
+  let configDeviceId = undefined;
+
+  if (selectedValue === 'user' || selectedValue === 'environment') {
+    configFacing = selectedValue;
+  } else {
+    configDeviceId = { exact: selectedValue };
+  }
+
+  const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.text.toLowerCase() || '';
+  isFrontCamera = (selectedValue === 'user') || selectedText.includes('front') || selectedText.includes('depan');
+
   camera = new Camera(videoElement, {
     onFrame: async () => { await holistic.send({ image: videoElement }); },
     width: 640,
     height: 480,
-    facingMode: currentFacingMode
+    facingMode: configFacing,
+    deviceId: configDeviceId
   });
 
   await camera.start();
@@ -103,11 +144,14 @@ async function toggleCamera() {
   else await startCamera();
 }
 
-switchCamBtn.addEventListener('click', async () => {
-  currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-  switchCamBtn.textContent = currentFacingMode === 'user' ? '🔄 Kamera: Depan' : '🔄 Kamera: Belakang';
+cameraSelect.addEventListener('change', async () => {
   baselineBodyY = null;
   if (isRunning) await startCamera();
+});
+
+// Penapisan Sambungan POSE tanpa Titik Muka (Hanya Bahu ke bawah)
+const BODY_POSE_CONNECTIONS = POSE_CONNECTIONS.filter(([start, end]) => {
+  return start >= 11 && end >= 11;
 });
 
 function onResults(results) {
@@ -117,7 +161,7 @@ function onResults(results) {
   canvasCtx.save();
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-  if (currentFacingMode === 'user') {
+  if (isFrontCamera) {
     canvasCtx.translate(canvasElement.width, 0);
     canvasCtx.scale(-1, 1);
   }
@@ -125,10 +169,15 @@ function onResults(results) {
   canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
   if (skeletonToggle.checked) {
-    // 1. Skeleton Badan
+    // 1. Skeleton Badan (Bahu ke Bawah) - Muka Dikeluarkan
     if (results.poseLandmarks) {
-      drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#00f3ff', lineWidth: 3 });
-      drawLandmarks(canvasCtx, results.poseLandmarks, { color: '#39ff14', fillColor: '#ffffff', lineWidth: 2, radius: 4 });
+      const bodyLandmarks = results.poseLandmarks.map((lm, index) => {
+        if (index < 11) return { x: 0, y: 0, z: 0, visibility: 0 };
+        return lm;
+      });
+
+      drawConnectors(canvasCtx, bodyLandmarks, BODY_POSE_CONNECTIONS, { color: '#00f3ff', lineWidth: 3 });
+      drawLandmarks(canvasCtx, bodyLandmarks, { color: '#38bdf8', fillColor: '#ffffff', lineWidth: 2, radius: 4 });
     }
 
     // 2. Deteksi 5 Jari Tangan Kiri
@@ -256,4 +305,5 @@ pwaInstallBtn.addEventListener('click', () => {
 
 window.addEventListener('DOMContentLoaded', () => {
   initHolistic();
+  getCameras();
 });
