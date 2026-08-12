@@ -1,11 +1,11 @@
-const CACHE_NAME = "jumpxman-v2.1.0";
-const APP_SHELL = "./index.html?v=2.1.0";
+const CACHE_NAME = "jumpxman-v2.1.1";
+const APP_SHELL = "./index.html?v=2.1.1";
 
 const LOCAL_FILES = [
   "./",
   APP_SHELL,
-  "./style.css?v=2.1.0",
-  "./app.js?v=2.1.0",
+  "./style.css?v=2.1.1",
+  "./app.js?v=2.1.1",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png"
@@ -15,7 +15,9 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(LOCAL_FILES))
+      .then((cache) => {
+        return cache.addAll(LOCAL_FILES);
+      })
   );
 
   self.skipWaiting();
@@ -41,11 +43,10 @@ self.addEventListener("activate", (event) => {
       await self.clients.claim();
 
       if (oldCaches.length > 0) {
-        const windows =
-          await self.clients.matchAll({
-            type: "window",
-            includeUncontrolled: true
-          });
+        const windows = await self.clients.matchAll({
+          type: "window",
+          includeUncontrolled: true
+        });
 
         await Promise.all(
           windows.map(async (client) => {
@@ -53,7 +54,7 @@ self.addEventListener("activate", (event) => {
               await client.navigate(client.url);
             } catch (error) {
               console.warn(
-                "Halaman tidak dapat dimuat semula:",
+                "Halaman gagal dimuat semula:",
                 error
               );
             }
@@ -71,9 +72,7 @@ self.addEventListener("message", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const requestUrl = new URL(
-    event.request.url
-  );
+  const requestUrl = new URL(event.request.url);
 
   if (
     event.request.method !== "GET" ||
@@ -82,29 +81,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (
-    requestUrl.pathname.endsWith("/version.json")
-  ) {
+  if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request, {
         cache: "no-store"
       })
-    );
-
-    return;
-  }
-
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
         .then((response) => {
           const copy = response.clone();
 
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, copy);
-            });
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, copy);
+          });
 
           return response;
         })
@@ -129,16 +116,12 @@ self.addEventListener("fetch", (event) => {
           return cachedFile;
         }
 
-        const response =
-          await fetch(event.request);
-
+        const response = await fetch(event.request);
         const copy = response.clone();
 
-        caches
-          .open(CACHE_NAME)
-          .then((cache) => {
-            cache.put(event.request, copy);
-          });
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, copy);
+        });
 
         return response;
       }
