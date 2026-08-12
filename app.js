@@ -55,6 +55,9 @@ function playMetronomeClick() {
     if (!audioCtx) {
       audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
 
@@ -93,20 +96,22 @@ bpmSlider.addEventListener('input', () => {
 metronomeToggle.addEventListener('change', updateMetronomeState);
 
 function initHolistic() {
-  holistic = new Holistic({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
-  });
+  try {
+    holistic = new Holistic({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
+    });
 
-  holistic.setOptions({
-    modelComplexity: 1,
-    smoothLandmarks: true,
-    enableSegmentation: false,
-    refineFaceLandmarks: false,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
-  });
+    holistic.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      refineFaceLandmarks: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
 
-  holistic.onResults(onResults);
+    holistic.onResults(onResults);
+  } catch (err) { console.error("Gagal init Holistic:", err); }
 }
 
 async function getCameras() {
@@ -132,7 +137,7 @@ async function getCameras() {
       option.text = device.label || `Kamera ${index + 1}`;
       cameraSelect.appendChild(option);
     });
-  } catch (err) { console.error("Gagal kamera:", err); }
+  } catch (err) { console.error("Gagal senarai kamera:", err); }
 }
 
 function startCountdownSequence(durationSec, onComplete) {
@@ -170,58 +175,73 @@ function startCountdownSequence(durationSec, onComplete) {
 }
 
 async function startCamera() {
-  if (camera) {
-    try { await camera.stop(); } catch (e) {}
-  }
+  startBtn.disabled = true;
+  try {
+    if (camera) {
+      try { await camera.stop(); } catch (e) {}
+    }
 
-  const selectedValue = cameraSelect.value || 'user';
-  let configFacing = 'user';
-  let configDeviceId = undefined;
+    const selectedValue = cameraSelect.value || 'user';
+    let configFacing = 'user';
+    let configDeviceId = undefined;
 
-  if (selectedValue === 'user' || selectedValue === 'environment') {
-    configFacing = selectedValue;
-  } else {
-    configDeviceId = { exact: selectedValue };
-  }
+    if (selectedValue === 'user' || selectedValue === 'environment') {
+      configFacing = selectedValue;
+    } else {
+      configDeviceId = { exact: selectedValue };
+    }
 
-  const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.text.toLowerCase() || '';
-  isFrontCamera = (selectedValue === 'user') || selectedText.includes('front') || selectedText.includes('depan');
+    const selectedText = cameraSelect.options[cameraSelect.selectedIndex]?.text.toLowerCase() || '';
+    isFrontCamera = (selectedValue === 'user') || selectedText.includes('front') || selectedText.includes('depan');
 
-  camera = new Camera(videoElement, {
-    onFrame: async () => { await holistic.send({ image: videoElement }); },
-    width: { ideal: 1280, max: 1920 },
-    height: { ideal: 720, max: 1080 },
-    frameRate: { ideal: 60, min: 30 },
-    facingMode: configFacing,
-    deviceId: configDeviceId
-  });
+    camera = new Camera(videoElement, {
+      onFrame: async () => {
+        if (holistic) await holistic.send({ image: videoElement });
+      },
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+      frameRate: { ideal: 60, min: 30 },
+      facingMode: configFacing,
+      deviceId: configDeviceId
+    });
 
-  await camera.start();
-  isCameraRunning = true;
-  isSessionActive = false;
-  gesturePhase = 'NONE';
+    await camera.start();
+    isCameraRunning = true;
+    isSessionActive = false;
+    gesturePhase = 'NONE';
 
-  startBtn.innerHTML = '⏸️ Berhenti';
-  startBtn.classList.remove('btn-primary');
-  startBtn.classList.add('btn-danger');
+    startBtn.innerHTML = '⏸️ Berhenti';
+    startBtn.classList.remove('btn-primary');
+    startBtn.classList.add('btn-danger');
 
-  const startMode = startModeSelect.value;
-  if (startMode.startsWith('timer_')) {
-    const seconds = parseInt(startMode.replace('timer_', ''), 10) || 5;
-    gestureToast.style.display = 'none';
-    startCountdownSequence(seconds);
-  } else if (startMode === 'motion') {
-    jumpStatusEl.textContent = 'MOTION...';
-    jumpStatusEl.className = 'status-badge waiting';
-    gestureToast.style.display = 'block';
-    gestureTextEl.textContent = '✋ Tunjuk Tapak Tangan...';
+    const startMode = startModeSelect.value;
+    if (startMode.startsWith('timer_')) {
+      const seconds = parseInt(startMode.replace('timer_', ''), 10) || 5;
+      gestureToast.style.display = 'none';
+      startCountdownSequence(seconds);
+    } else if (startMode === 'motion') {
+      jumpStatusEl.textContent = 'MOTION...';
+      jumpStatusEl.className = 'status-badge waiting';
+      gestureToast.style.display = 'block';
+      gestureTextEl.textContent = '✋ Tunjuk Tapak Tangan...';
+    }
+  } catch (err) {
+    console.error("Ralat Kamera:", err);
+    alert("Gagal memulakan kamera. Sila pastikan kebenaran kamera diberikan.");
+    await stopCamera();
+  } finally {
+    startBtn.disabled = false;
   }
 }
 
 async function stopCamera() {
-  if (camera) {
-    try { await camera.stop(); } catch (e) {}
-  }
+  startBtn.disabled = true;
+  try {
+    if (camera) {
+      try { await camera.stop(); } catch (e) {}
+    }
+  } catch (e) {}
+
   isCameraRunning = false;
   isSessionActive = false;
   isCountdownRunning = false;
@@ -244,6 +264,7 @@ async function stopCamera() {
   jumpMeterBar.style.width = '0%';
 
   updateMetronomeState();
+  startBtn.disabled = false;
 }
 
 async function toggleCamera() {
@@ -419,8 +440,6 @@ function detectJump(landmarks) {
   const rightHip = landmarks[24];
   const leftAnkle = landmarks[27];
   const rightAnkle = landmarks[28];
-  const leftToe = landmarks[31];
-  const rightToe = landmarks[32];
 
   if (!leftShoulder || !rightShoulder || !leftHip || !rightHip || !leftAnkle || !rightAnkle) {
     jumpMeterBar.style.width = '0%';
@@ -493,14 +512,23 @@ resetBtn.addEventListener('click', () => {
 });
 
 function toggleSettingsModal(show) {
-  if (show) settingsModal.classList.add('active');
-  else settingsModal.classList.remove('active');
+  if (show) {
+    settingsModal.classList.add('active');
+  } else {
+    settingsModal.classList.remove('active');
+  }
 }
 
 openSettingsBtn.addEventListener('click', () => toggleSettingsModal(true));
 settingsBtn.addEventListener('click', () => toggleSettingsModal(true));
 closeSettingsBtn.addEventListener('click', () => toggleSettingsModal(false));
 saveSettingsBtn.addEventListener('click', () => toggleSettingsModal(false));
+
+settingsModal.addEventListener('click', (e) => {
+  if (e.target === settingsModal) {
+    toggleSettingsModal(false);
+  }
+});
 
 startBtn.addEventListener('click', toggleCamera);
 
@@ -529,8 +557,3 @@ window.addEventListener('DOMContentLoaded', () => {
   initHolistic();
   getCameras();
 });
-EOF
-}
-});
-EOF
-}
