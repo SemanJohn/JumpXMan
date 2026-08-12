@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>JumpXMan - Pengira Lompatan AI & Deteksi 5 Jari</title>
+  <title>JumpXMan - Pengira Lompatan AI</title>
   
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
@@ -24,7 +24,10 @@
         <span class="icon">🏃</span>
         <h1>JumpXMan <span class="badge">AI Pose</span></h1>
       </div>
-      <button id="pwa-install-btn" class="btn-install" style="display:none;">📱 Pasang App</button>
+      <div class="header-actions">
+        <button id="pwa-install-btn" class="btn-install" style="display:none;">📱 Pasang App</button>
+        <button id="open-settings-btn" class="icon-btn" aria-label="Tetapan">⚙️</button>
+      </div>
     </header>
 
     <main class="viewport-section">
@@ -48,47 +51,75 @@
         </div>
 
         <div id="calibration-msg" class="calibration-overlay">
-          <p>🧍 Pastikan badan dan tangan kelihatan di kamera.</p>
+          <p>🧍 Pastikan badan dan kaki kelihatan di kamera.</p>
         </div>
       </div>
     </main>
 
-    <section class="controls-panel">
-      <div class="btn-group">
-        <button id="start-btn" class="btn btn-primary">▶️ Mula Kamera</button>
-        <button id="reset-btn" class="btn btn-danger">🔄 Semula</button>
-      </div>
-
-      <div class="control-row">
-        <label for="camera-select" class="input-label">📷 Kamera:</label>
-        <select id="camera-select" class="select-input">
-          <option value="">Memuatkan kamera...</option>
-        </select>
-      </div>
-
-      <div class="control-row">
-        <label for="sensitivity-select" class="input-label">⚡ Kepekaan:</label>
-        <select id="sensitivity-select" class="select-input">
-          <option value="high">Tinggi (Lompatan Kecil)</option>
-          <option value="medium" selected>Sederhana (Disyorkan)</option>
-          <option value="low">Rendah (Lompatan Tinggi)</option>
-        </select>
-      </div>
-
-      <div class="toggle-group">
-        <label class="toggle-switch">
-          <input type="checkbox" id="skeleton-toggle" checked>
-          <span class="slider"></span>
-          <span class="toggle-label">Skeleton & 5 Jari</span>
-        </label>
-
-        <label class="toggle-switch">
-          <input type="checkbox" id="sound-toggle" checked>
-          <span class="slider"></span>
-          <span class="toggle-label">Bunyi</span>
-        </label>
-      </div>
+    <section class="main-controls">
+      <button id="start-btn" class="btn btn-primary">▶️ Mula</button>
+      <button id="reset-btn" class="btn btn-secondary">🔄 Reset</button>
+      <button id="settings-btn" class="btn btn-outline">⚙️ Tetapan</button>
     </section>
+
+    <!-- Modal Pop-Up Tetapan -->
+    <div id="settings-modal" class="modal-backdrop">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>⚙️ Tetapan JumpXMan</h2>
+          <button id="close-settings-btn" class="close-btn">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="setting-row">
+            <label for="camera-select" class="setting-label">📷 Pilihan Kamera:</label>
+            <select id="camera-select" class="select-input">
+              <option value="">Memuatkan kamera...</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="sensitivity-select" class="setting-label">⚡ Kepekaan Lompatan:</label>
+            <select id="sensitivity-select" class="select-input">
+              <option value="high">Tinggi (Lompatan Kecil)</option>
+              <option value="medium" selected>Sederhana (Disyorkan)</option>
+              <option value="low">Rendah (Lompatan Tinggi)</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <span class="setting-label">🩻 Paparan Skeleton:</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="skeleton-toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <hr class="divider">
+
+          <div class="setting-row">
+            <span class="setting-label">🥁 Bunyi Metronome:</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="metronome-toggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row metronome-config">
+            <label for="bpm-slider" class="setting-label">⏱️ Tempo Metronome (BPM):</label>
+            <div class="bpm-controls">
+              <input type="range" id="bpm-slider" min="40" max="180" value="60" step="5">
+              <span id="bpm-value" class="bpm-badge">60 BPM</span>
+            </div>
+            <p class="setting-hint">60 BPM = 1 detik bunyi setiap saat untuk panduan ritma lompatan.</p>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="save-settings-btn" class="btn btn-primary">Simpan & Tutup</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
