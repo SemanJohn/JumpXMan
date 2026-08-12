@@ -10,6 +10,7 @@ const closeSettingsBtn = document.getElementById('close-settings-btn');
 const saveSettingsBtn = document.getElementById('save-settings-btn');
 
 const settingsModal = document.getElementById('settings-modal');
+const startModeSelect = document.getElementById('start-mode-select');
 const cameraSelect = document.getElementById('camera-select');
 const sensitivitySelect = document.getElementById('sensitivity-select');
 const skeletonToggle = document.getElementById('skeleton-toggle');
@@ -21,15 +22,27 @@ const bpmValueEl = document.getElementById('bpm-value');
 const jumpCountEl = document.getElementById('jump-count');
 const jumpStatusEl = document.getElementById('jump-status');
 const jumpMeterBar = document.getElementById('jump-meter-bar');
+const countdownOverlay = document.getElementById('countdown-overlay');
+const countdownNumberEl = document.getElementById('countdown-number');
+const gestureToast = document.getElementById('gesture-toast');
+const gestureTextEl = document.getElementById('gesture-text');
+const calibrationMsg = document.getElementById('calibration-msg');
+const calibrationText = document.getElementById('calibration-text');
 const pwaInstallBtn = document.getElementById('pwa-install-btn');
 
 let camera = null;
 let holistic = null;
-let isRunning = false;
+let isCameraRunning = false;
+let isSessionActive = false;
+let isFullBodyVisible = false;
 let isFrontCamera = true;
 let jumpCount = 0;
 
-let baselineBodyY = null;
+let gesturePhase = 'NONE';
+let isCountdownRunning = false;
+let countdownTimerId = null;
+
+let groundBaselineY = null;
 let state = 'STANDING';
 let lastJumpTime = 0;
 const JUMP_COOLDOWN_MS = 250;
@@ -63,7 +76,7 @@ function updateMetronomeState() {
     metronomeIntervalId = null;
   }
 
-  if (isRunning && metronomeToggle.checked) {
+  if (isCameraRunning && isSessionActive && metronomeToggle.checked) {
     const bpm = parseInt(bpmSlider.value, 10) || 60;
     const intervalMs = (60 / bpm) * 1000;
 
@@ -122,6 +135,40 @@ async function getCameras() {
   } catch (err) { console.error("Gagal kamera:", err); }
 }
 
+function startCountdownSequence(durationSec, onComplete) {
+  if (isCountdownRunning) return;
+  isCountdownRunning = true;
+
+  let currentCount = durationSec;
+  countdownNumberEl.textContent = currentCount;
+  countdownOverlay.style.display = 'flex';
+  
+  jumpStatusEl.textContent = 'SEDIA...';
+  jumpStatusEl.className = 'status-badge waiting';
+
+  countdownTimerId = setInterval(() => {
+    if (!isFullBodyVisible) return;
+
+    currentCount--;
+    if (currentCount > 0) {
+      countdownNumberEl.textContent = currentCount;
+      playMetronomeClick();
+    } else {
+      clearInterval(countdownTimerId);
+      countdownTimerId = null;
+      isCountdownRunning = false;
+      countdownOverlay.style.display = 'none';
+
+      isSessionActive = true;
+      jumpStatusEl.textContent = 'SEDIA';
+      jumpStatusEl.className = 'status-badge ready';
+      
+      updateMetronomeState();
+      if (onComplete) onComplete();
+    }
+  }, 1000);
+}
+
 async function startCamera() {
   if (camera) {
     try { await camera.stop(); } catch (e) {}
@@ -150,23 +197,43 @@ async function startCamera() {
   });
 
   await camera.start();
-  isRunning = true;
+  isCameraRunning = true;
+  isSessionActive = false;
+  gesturePhase = 'NONE';
 
   startBtn.innerHTML = '⏸️ Berhenti';
   startBtn.classList.remove('btn-primary');
   startBtn.classList.add('btn-danger');
-  
-  jumpStatusEl.textContent = 'SEDIA';
-  jumpStatusEl.className = 'status-badge ready';
 
-  updateMetronomeState();
+  const startMode = startModeSelect.value;
+  if (startMode.startsWith('timer_')) {
+    const seconds = parseInt(startMode.replace('timer_', ''), 10) || 5;
+    gestureToast.style.display = 'none';
+    startCountdownSequence(seconds);
+  } else if (startMode === 'motion') {
+    jumpStatusEl.textContent = 'MOTION...';
+    jumpStatusEl.className = 'status-badge waiting';
+    gestureToast.style.display = 'block';
+    gestureTextEl.textContent = '✋ Tunjuk Tapak Tangan...';
+  }
 }
 
 async function stopCamera() {
   if (camera) {
     try { await camera.stop(); } catch (e) {}
   }
-  isRunning = false;
+  isCameraRunning = false;
+  isSessionActive = false;
+  isCountdownRunning = false;
+  gesturePhase = 'NONE';
+
+  if (countdownTimerId) {
+    clearInterval(countdownTimerId);
+    countdownTimerId = null;
+  }
+
+  countdownOverlay.style.display = 'none';
+  gestureToast.style.display = 'none';
 
   startBtn.innerHTML = '▶️ Mula';
   startBtn.classList.remove('btn-danger');
@@ -180,13 +247,13 @@ async function stopCamera() {
 }
 
 async function toggleCamera() {
-  if (isRunning) await stopCamera();
+  if (isCameraRunning) await stopCamera();
   else await startCamera();
 }
 
 cameraSelect.addEventListener('change', async () => {
-  baselineBodyY = null;
-  if (isRunning) await startCamera();
+  groundBaselineY = null;
+  if (isCameraRunning) await startCamera();
 });
 
 function drawLine(ctx, p1, p2, color, width = 3) {
@@ -262,6 +329,46 @@ function drawCustomSkeleton(ctx, results) {
   }
 }
 
+function processMotionGesture(handLandmarks) {
+  if (!handLandmarks || isSessionActive || isCountdownRunning) return;
+
+  const wrist = handLandmarks[0];
+  const fingerTips = [4, 8, 12, 16, 20];
+
+  let totalDist = 0;
+  fingerTips.forEach(idx => {
+    const tip = handLandmarks[idx];
+    const dx = tip.x - wrist.x;
+    const dy = tip.y - wrist.y;
+    totalDist += Math.sqrt(dx * dx + dy * dy);
+  });
+  const avgDist = totalDist / fingerTips.length;
+
+  if (gesturePhase === 'NONE' || gesturePhase === 'FIST_CLOSED') {
+    if (avgDist > 0.22) {
+      gesturePhase = 'PALM_OPEN';
+      gestureToast.style.display = 'block';
+      gestureTextEl.textContent = '✋ Tapak Tangan Dikesan! Sila Genggam (✊) untuk Mula';
+    }
+  } else if (gesturePhase === 'PALM_OPEN') {
+    if (avgDist < 0.14) {
+      gesturePhase = 'FIST_CLOSED';
+      gestureToast.style.display = 'none';
+      startCountdownSequence(3);
+    }
+  }
+}
+
+function validateFullBodyVisible(landmarks) {
+  if (!landmarks) return false;
+  const keypoints = [11, 12, 23, 24, 25, 26, 27, 28];
+  let visibleCount = 0;
+  keypoints.forEach(idx => {
+    if (landmarks[idx] && landmarks[idx].visibility > 0.35) visibleCount++;
+  });
+  return visibleCount >= 6;
+}
+
 function onResults(results) {
   canvasElement.width = videoElement.videoWidth || 640;
   canvasElement.height = videoElement.videoHeight || 480;
@@ -276,13 +383,28 @@ function onResults(results) {
 
   canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
+  isFullBodyVisible = validateFullBodyVisible(results.poseLandmarks);
+
+  if (!isFullBodyVisible) {
+    calibrationMsg.classList.add('warning');
+    calibrationText.textContent = '⚠️ Pastikan keseluruhan tubuh (bahu hingga kaki) kelihatan di kamera!';
+  } else {
+    calibrationMsg.classList.remove('warning');
+    calibrationText.textContent = '🧍 Keseluruhan tubuh dikesan dengan baik.';
+  }
+
   if (skeletonToggle.checked) {
     drawCustomSkeleton(canvasCtx, results);
   }
 
-  if (results.poseLandmarks) {
+  if (startModeSelect.value === 'motion') {
+    if (results.leftHandLandmarks) processMotionGesture(results.leftHandLandmarks);
+    else if (results.rightHandLandmarks) processMotionGesture(results.rightHandLandmarks);
+  }
+
+  if (isSessionActive && results.poseLandmarks && isFullBodyVisible) {
     detectJump(results.poseLandmarks);
-  } else {
+  } else if (!isSessionActive) {
     jumpMeterBar.style.width = '0%';
   }
 
@@ -295,9 +417,12 @@ function detectJump(landmarks) {
   const rightShoulder = landmarks[12];
   const leftHip = landmarks[23];
   const rightHip = landmarks[24];
+  const leftAnkle = landmarks[27];
+  const rightAnkle = landmarks[28];
+  const leftToe = landmarks[31];
+  const rightToe = landmarks[32];
 
-  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip ||
-      leftHip.visibility < 0.3 || rightHip.visibility < 0.3) {
+  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip || !leftAnkle || !rightAnkle) {
     jumpMeterBar.style.width = '0%';
     return;
   }
@@ -305,8 +430,9 @@ function detectJump(landmarks) {
   const shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
   const hipY = (leftHip.y + rightHip.y) / 2;
   const noseY = (nose && nose.visibility > 0.3) ? nose.y : shoulderY - 0.15;
+  const ankleY = (leftAnkle.y + rightAnkle.y) / 2;
 
-  const currentBodyY = (noseY * 0.3) + (shoulderY * 0.35) + (hipY * 0.35);
+  const currentBodyY = (noseY * 0.25) + (shoulderY * 0.25) + (hipY * 0.25) + (ankleY * 0.25);
   const torsoHeight = Math.abs(hipY - shoulderY);
 
   if (torsoHeight < 0.04) {
@@ -314,11 +440,11 @@ function detectJump(landmarks) {
     return;
   }
 
-  if (baselineBodyY === null) {
-    baselineBodyY = currentBodyY;
+  if (groundBaselineY === null) {
+    groundBaselineY = currentBodyY;
   } else {
-    if (state === 'STANDING' && currentBodyY <= baselineBodyY + 0.05) {
-      baselineBodyY = baselineBodyY * 0.9 + currentBodyY * 0.1;
+    if (state === 'STANDING' && currentBodyY <= groundBaselineY + 0.05) {
+      groundBaselineY = groundBaselineY * 0.92 + currentBodyY * 0.1;
     }
   }
 
@@ -328,10 +454,10 @@ function detectJump(landmarks) {
   if (sensitivity === 'low')  factor = 0.20;
 
   const requiredHeight = torsoHeight * factor;
-  const jumpUpThreshold = baselineBodyY - requiredHeight;
-  const landThreshold = baselineBodyY - (requiredHeight * 0.3);
+  const jumpUpThreshold = groundBaselineY - requiredHeight;
+  const landThreshold = groundBaselineY - (requiredHeight * 0.3);
 
-  const displacement = baselineBodyY - currentBodyY;
+  const displacement = groundBaselineY - currentBodyY;
   const progressPercent = Math.min(100, Math.max(0, (displacement / requiredHeight) * 100));
   jumpMeterBar.style.width = `${progressPercent}%`;
 
@@ -359,7 +485,7 @@ function detectJump(landmarks) {
 resetBtn.addEventListener('click', () => {
   jumpCount = 0;
   jumpCountEl.textContent = '0';
-  baselineBodyY = null;
+  groundBaselineY = null;
   state = 'STANDING';
   jumpStatusEl.textContent = 'SEDIA';
   jumpStatusEl.className = 'status-badge ready';
@@ -403,3 +529,8 @@ window.addEventListener('DOMContentLoaded', () => {
   initHolistic();
   getCameras();
 });
+EOF
+}
+});
+EOF
+}
