@@ -2,43 +2,22 @@
 <html lang="ms">
 <head>
   <meta charset="UTF-8">
-
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
-  >
-
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
   <title>JumpXMan - Pengira Lompatan AI</title>
 
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta
-    name="apple-mobile-web-app-status-bar-style"
-    content="black-translucent"
-  >
-  <meta
-    name="apple-mobile-web-app-title"
-    content="JumpXMan"
-  >
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JumpXMan">
 
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon-192.png">
-  <link rel="stylesheet" href="./style.css?v=2.1.1">
+  <link rel="stylesheet" href="./style.css?v=2.1.0">
 
-  <script
-    defer
-    src="./app.js?v=2.1.1"
-  ></script>
-
-  <script
-    defer
-    src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
-  ></script>
-
-  <script
-    defer
-    src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"
-  ></script>
+  <!-- app.js dimuat dahulu supaya butang tetap berfungsi -->
+  <script defer src="./app.js?v=2.1.0"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
 </head>
 
 <body>
@@ -46,23 +25,196 @@
 
     <header class="app-header">
       <div class="logo">
-        <span class="icon" aria-hidden="true">🏃</span>
-
-        <h1>
-          JumpXMan
-          <span class="badge">AI Pose</span>
-        </h1>
+        <span class="icon">🏃</span>
+        <h1>JumpXMan <span class="badge">AI Pose</span></h1>
       </div>
 
       <div class="header-actions">
-        <button
-          id="pwa-install-btn"
-          class="btn-install"
-          type="button"
-          hidden
-        >
+        <button id="pwa-install-btn" class="btn-install" type="button" hidden>
           📱 Pasang App
         </button>
 
-        <span
-          id="app-version
+        <span id="app-version" class="version-badge">v2.1.0</span>
+
+        <button id="open-settings-btn" class="icon-btn tap-control" type="button" aria-label="Tetapan">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <main class="viewport-section">
+      <div class="video-wrapper">
+        <video id="webcam" playsinline muted autoplay></video>
+        <canvas id="output_canvas"></canvas>
+
+        <div class="hud-overlay">
+          <div class="stat-card count-card">
+            <span class="label">LOMPATAN</span>
+            <span id="jump-count" class="value">0</span>
+          </div>
+
+          <div class="stat-card status-card">
+            <span class="label">STATUS</span>
+            <span id="jump-status" class="status-badge ready">SEDIA</span>
+          </div>
+        </div>
+
+        <div id="countdown-overlay" class="countdown-overlay" hidden>
+          <span id="countdown-number">3</span>
+        </div>
+
+        <div id="gesture-toast" class="gesture-toast" hidden>
+          <span id="gesture-text">✋ Tunjuk Tapak Tangan...</span>
+        </div>
+
+        <div class="jump-meter-container">
+          <div id="jump-meter-bar" class="jump-meter-bar"></div>
+        </div>
+
+        <div id="calibration-msg" class="calibration-overlay">
+          <p id="calibration-text">
+            🧍 Tekan Mula dan benarkan akses kamera.
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <section class="main-controls">
+      <button id="start-btn" class="btn btn-primary tap-control" type="button">
+        ▶️ Mula
+      </button>
+
+      <button id="reset-btn" class="btn btn-secondary tap-control" type="button">
+        🔄 Reset
+      </button>
+
+      <button id="settings-btn" class="btn btn-outline tap-control" type="button">
+        ⚙️ Tetapan
+      </button>
+    </section>
+
+    <div
+      id="settings-modal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      hidden
+    >
+      <div class="modal-content">
+
+        <div class="modal-header">
+          <h2 id="settings-title">⚙️ Tetapan JumpXMan</h2>
+
+          <button
+            id="close-settings-btn"
+            class="close-btn tap-control"
+            type="button"
+            aria-label="Tutup"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div class="modal-body">
+
+          <div class="setting-row">
+            <label for="start-mode-select" class="setting-label">
+              🚀 Cara Mula Sesi:
+            </label>
+
+            <select id="start-mode-select" class="select-input">
+              <option value="timer_5" selected>Timer 5 Saat</option>
+              <option value="timer_10">Timer 10 Saat</option>
+              <option value="timer_3">Timer 3 Saat</option>
+              <option value="motion">
+                Motion (Tapak Tangan ✋ &amp; Genggam ✊)
+              </option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="camera-select" class="setting-label">
+              📷 Pilihan Kamera:
+            </label>
+
+            <select id="camera-select" class="select-input">
+              <option value="user">📷 Kamera Depan (Selfie)</option>
+              <option value="environment">📷 Kamera Belakang (Utama)</option>
+            </select>
+          </div>
+
+          <div class="setting-row">
+            <label for="sensitivity-select" class="setting-label">
+              ⚡ Kepekaan Lompatan:
+            </label>
+
+            <select id="sensitivity-select" class="select-input">
+              <option value="high">Tinggi (Lompatan Kecil)</option>
+              <option value="medium" selected>Sederhana (Disyorkan)</option>
+              <option value="low">Rendah (Lompatan Tinggi)</option>
+            </select>
+          </div>
+
+          <div class="setting-row toggle-row">
+            <span class="setting-label">🩻 Paparan Skeleton:</span>
+
+            <label class="toggle-switch">
+              <input type="checkbox" id="skeleton-toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <hr class="divider">
+
+          <div class="setting-row toggle-row">
+            <span class="setting-label">🥁 Bunyi Metronom:</span>
+
+            <label class="toggle-switch">
+              <input type="checkbox" id="metronome-toggle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row metronome-config">
+            <label for="bpm-slider" class="setting-label">
+              ⏱️ Tempo Metronom (BPM):
+            </label>
+
+            <div class="bpm-controls">
+              <input
+                type="range"
+                id="bpm-slider"
+                min="40"
+                max="180"
+                value="60"
+                step="5"
+              >
+
+              <span id="bpm-value" class="bpm-badge">60 BPM</span>
+            </div>
+
+            <p class="setting-hint">
+              60 BPM = satu bunyi setiap saat.
+            </p>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button
+            id="save-settings-btn"
+            class="btn btn-primary tap-control"
+            type="button"
+          >
+            Simpan &amp; Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    Aplikasi ini memerlukan JavaScript untuk berfungsi.
+  </noscript>
+</body>
+</html>
